@@ -71,6 +71,11 @@ impl Beads {
         &mut self.data
     }
 
+    /// Centroid of each atom, the mean over beads: one 3-vector per atom, length N.
+    pub fn centroid(&self) -> Vec<[f64; 3]> {
+        unimplemented!()
+    }
+
     fn offset(&self, j: usize, i: usize) -> usize {
         assert!(
             j < self.n_beads && i < self.n_atoms,
