@@ -12,7 +12,7 @@ Proposed resolution:
 Owner decision:
 ```
 
-## Q1 (open) — i-PI "LJ driver" is not in the conda-forge i-PI package
+## Q1 (resolved) — i-PI "LJ driver" is not in the conda-forge i-PI package
 Milestone: 4   Raised by: Phase 0 bootstrap
 Spec text: WORKFLOW Phase 0: "tasks `lmp` (LAMMPS), `ipi` (i-PI, with its LJ driver)"
 Test or code: pixi.toml `[feature.ref.tasks]`
@@ -21,4 +21,5 @@ Lennard-Jones (only `Spherical_LJ`, a confined model). The Fortran `i-pi-driver 
 Proposed resolution: use LAMMPS as the i-PI client (`fix ipi` with `pair_style lj/cut`; present in the pinned
 lammps 2025.07.22 build). This also reuses the same LJ implementation validated against in M3. Alternatively
 build the Fortran driver from the i-PI source tag matching pixi.lock. The `ipi` task currently runs `i-pi` only.
-Owner decision:
+Owner decision (2026-10-28): use LAMMPS `fix ipi` with `pair_style lj/cut` as the i-PI LJ client.
+The `ipi` task stays `i-pi`; the client is launched with the `lmp` task.
