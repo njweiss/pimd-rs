@@ -26,6 +26,11 @@ use crate::error::CoreError;
 ///
 /// Errors with `CoreError::InvalidValue` if `t_kelvin` is not positive and finite.
 pub fn beta_from_kelvin(t_kelvin: f64) -> Result<f64, CoreError> {
-    let _ = t_kelvin;
-    unimplemented!()
+    if !(t_kelvin.is_finite() && t_kelvin > 0.0) {
+        return Err(CoreError::InvalidValue {
+            what: "temperature (K)",
+            value: t_kelvin,
+        });
+    }
+    Ok(1.0 / (K_B_HARTREE_PER_KELVIN * t_kelvin))
 }

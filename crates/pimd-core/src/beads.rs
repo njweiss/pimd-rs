@@ -73,7 +73,19 @@ impl Beads {
 
     /// Centroid of each atom, the mean over beads: one 3-vector per atom, length N.
     pub fn centroid(&self) -> Vec<[f64; 3]> {
-        unimplemented!()
+        let p = self.n_beads as f64;
+        (0..self.n_atoms)
+            .map(|i| {
+                let mut sum = [0.0; 3];
+                for j in 0..self.n_beads {
+                    let q = self.get(j, i);
+                    for d in 0..3 {
+                        sum[d] += q[d];
+                    }
+                }
+                sum.map(|s| s / p)
+            })
+            .collect()
     }
 
     fn offset(&self, j: usize, i: usize) -> usize {
