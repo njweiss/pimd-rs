@@ -84,6 +84,7 @@ version = "0.1.0"
 dependencies = [
  "pimd-core",
  "pimd-integrators",
+ "pimd-potentials",
 ]
 
 [[package]]

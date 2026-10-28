@@ -67,3 +67,30 @@ Proposed resolution: (b). Estimators are called every sample step with inputs th
 so a mismatch is a bug, not a recoverable condition; it matches Q2 and keeps the briefed signatures.
 Owner decision (2026-10-28): (b). Estimators keep `f64` returns and document a panic on shape mismatch;
 `EstimatorError` is removed and the M2 brief updated.
+
+## Q5 (open) — `validation/verify_reference_data.py` does not exist, but M2 adds the first reference data
+Milestone: 2   Raised by: test author
+Spec text: WORKFLOW "Long validation": `CHECK_LONG=1 ./scripts/check.sh` runs the long tests "together with
+`validation/verify_reference_data.py`, which regenerates reference data into a temporary directory and compares it
+with the committed JSON."
+Test or code: crates/pimd-estimators/tests/data/gen_double_well.py, double_well.json; scripts/check.sh (skips the
+step when the script is absent).
+What seems wrong / ambiguous: M2 commits the first generated reference data, so the regeneration check now has
+something to check, but no brief says who writes the script or how it compares (tolerances, which keys).
+Without it, nothing detects a hand-edited JSON or a generator that no longer reproduces it.
+Proposed resolution: the owner (or a small chore commit outside the locked tests) adds a generic script that runs
+every `crates/*/tests/data/gen_*.py --out <tmpdir>` (the M2 generator already accepts `--out`) and compares each
+JSON leaf numerically with the committed file (rtol 1e-9, atol 1e-12; strings compared exactly except the
+`versions` block, which is reported, not compared). Runtime of the M2 generator: about 50 s.
+Owner decision:
+
+## Q6 (open) — Does `Thermostat::Off` consume random numbers?
+Milestone: 2   Raised by: test author
+Spec text: T-1 "one normal per (k, i, d) per O step"; T-3 "`Thermostat::Off` applies the identity"; I-1 "O: thermostat
+step (T-1), or identity if the thermostat is off"; D-4 "Every stochastic step documents its draw order."
+Test or code: crates/pimd-integrators/tests/thermostat.rs `off_is_identity_and_draws_nothing`.
+What seems wrong / ambiguous: the spec does not say outright whether the identity O step still draws P·N·3
+normals (keeping the stream aligned with a PILE-L run) or draws none. The test pins "draws none" (Off is not a
+stochastic step, so it has no draw order), and also requires the state to be bitwise unchanged.
+Proposed resolution: state in T-3 "`Thermostat::Off` draws no random numbers".
+Owner decision:

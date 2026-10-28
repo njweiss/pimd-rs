@@ -1,0 +1,111 @@
+{
+  "description": "1D double well V = a x^4 - b x^2, one particle, atomic units; 3D DoubleWell energy of N atoms = 3 N x the 1D values",
+  "generator": "gen_double_well.py",
+  "versions": {
+    "python": "3.12.16",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1"
+  },
+  "parameters": {
+    "mass": 1.0,
+    "a": 0.125,
+    "b": 1.0,
+    "beta": 2.0
+  },
+  "derived": {
+    "minimum_x": 2.0,
+    "barrier_height": 2.0,
+    "omega_well": 2.0,
+    "beta_omega_well": 4.0,
+    "beta_barrier": 4.0,
+    "lowest_levels_above_minimum": [
+      0.9004067473102499,
+      0.9482526911667613,
+      2.1852333631042002,
+      2.786675102375934
+    ]
+  },
+  "exact_energy_1d": -1.0026585599503726,
+  "finite_p_energy_1d": {
+    "32": -1.0043015298620985,
+    "64": -1.0030707010797895
+  },
+  "discretization_ratio_32_over_64": 3.9864255092678005,
+  "convergence": {
+    "dvr": [
+      {
+        "half_width": 5.0,
+        "n": 200,
+        "energy": -1.0026585599510225
+      },
+      {
+        "half_width": 6.0,
+        "n": 300,
+        "energy": -1.0026585599505713
+      },
+      {
+        "half_width": 7.0,
+        "n": 400,
+        "energy": -1.0026585599503726
+      }
+    ],
+    "dvr_max_spread": 6.499245586155666e-13,
+    "transfer_matrix": [
+      {
+        "p": 32,
+        "half_width": 5.0,
+        "n": 800,
+        "energy": -1.0043015298625837
+      },
+      {
+        "p": 32,
+        "half_width": 6.0,
+        "n": 1200,
+        "energy": -1.004301529862099
+      },
+      {
+        "p": 32,
+        "half_width": 6.5,
+        "n": 1600,
+        "energy": -1.0043015298620985
+      },
+      {
+        "p": 64,
+        "half_width": 5.0,
+        "n": 800,
+        "energy": -1.0030707010805697
+      },
+      {
+        "p": 64,
+        "half_width": 6.0,
+        "n": 1200,
+        "energy": -1.0030707010797904
+      },
+      {
+        "p": 64,
+        "half_width": 6.5,
+        "n": 1600,
+        "energy": -1.0030707010797895
+      }
+    ]
+  },
+  "harmonic_self_check": {
+    "mass": 1.0,
+    "omega": 1.0,
+    "beta": 4.0,
+    "dvr": 0.5186573603637282,
+    "coth_formula": 0.5186573603637741,
+    "finite_p": [
+      {
+        "p": 4,
+        "transfer_matrix": 0.4666666666666678,
+        "e9_formula": 0.4666666666666667
+      },
+      {
+        "p": 16,
+        "transfer_matrix": 0.5148483509615613,
+        "e9_formula": 0.5148483509615613
+      }
+    ]
+  }
+}

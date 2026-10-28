@@ -4,3 +4,4 @@ pub mod error;
 pub mod ring_polymer;
 
 pub use error::IntegratorError;
+pub use ring_polymer::{RingPolymerIntegrator, RingPolymerSim, RingState, Thermostat};
