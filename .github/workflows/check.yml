@@ -1,0 +1,14 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rustup reads rust-toolchain.toml (1.96.0 + rustfmt, clippy)
+      - run: rustup show
+      - run: ./scripts/check.sh

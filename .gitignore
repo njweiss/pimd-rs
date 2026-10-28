@@ -1,0 +1,13 @@
+/target/
+
+# pixi environments (pixi.lock is committed)
+.pixi/
+
+# Large trajectories and model weights are never committed (see README for download steps)
+*.dcd
+*.nc
+*.lammpstrj
+*.traj
+*.pt
+*.pth
+*.model

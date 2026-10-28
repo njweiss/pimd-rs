@@ -1,0 +1,35 @@
+[workspace]
+name = "pimd-rs"
+channels = ["conda-forge"]
+platforms = [{ platform = "linux-64", cuda = "13.3" }]
+
+[feature.ref.dependencies]
+python = "3.12.*"
+lammps = "*"
+i-pi = "*"
+openmm = "*"
+cuda-version = "13.3.*"
+tblite-python = "*"
+ase = "*"
+numpy = "*"
+scipy = "*"
+
+[feature.ref.tasks]
+lmp = "lmp"
+ipi = "i-pi"
+
+[feature.ml.dependencies]
+python = "3.12.*"
+pytorch-gpu = "*"
+cuda-version = "13.3.*"
+ase = "*"
+
+[feature.ml.pypi-dependencies]
+mace-torch = "*"
+
+[environments]
+ref = { features = ["ref"], solve-group = "ref" }
+ml = { features = ["ml"], solve-group = "ml" }
+
+[tasks]
+test-validation = { cmd = "./scripts/check.sh", env = { CHECK_LONG = "1" } }

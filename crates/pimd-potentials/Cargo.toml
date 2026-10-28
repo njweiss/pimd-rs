@@ -1,0 +1,10 @@
+[package]
+name = "pimd-potentials"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+pimd-core.workspace = true
+thiserror.workspace = true
