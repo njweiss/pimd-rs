@@ -1,6 +1,6 @@
 //! Tests for the `Potential` trait and `Harmonic` (SPEC P-1, P-2, P-4, S-2, S-3, S-4).
 
-use pimd_core::Beads;
+use pimd_core::{Beads, Cell};
 use pimd_potentials::{Evaluation, Harmonic, Potential, PotentialError};
 
 /// SplitMix64, test-only seeded generator independent of `pimd_core::Rng`.
@@ -238,6 +238,23 @@ fn atom_count_mismatch_is_shape_mismatch() {
                 actual: n
             }
         );
+    }
+}
+
+/// P-2 (Q3), C-1: `Harmonic` ignores the cell. With `Some(cell)` the energies and forces are
+/// bitwise equal to `None`, for a cell smaller than the bead spread (so any wrap or minimum
+/// image would change q) and a large one; seeded random beads in [−2, 2), P = 3, N = 4.
+#[test]
+fn cell_is_ignored() {
+    let mut rng = SplitMix64(7);
+    let q = random_beads(&mut rng, 3, 4);
+    let mut h = Harmonic::new(vec![1.0, 2.0, 3.0, 4.0], 0.7).unwrap();
+    let open = eval(&mut h, &q);
+    for lengths in [[1.5, 2.5, 3.0], [100.0, 100.0, 100.0]] {
+        let cell = Cell::new(lengths).unwrap();
+        let e = h.evaluate(&q, Some(&cell), None).unwrap();
+        assert_eq!(e.energies, open.energies, "cell {lengths:?}");
+        assert_eq!(e.forces, open.forces, "cell {lengths:?}");
     }
 }
 

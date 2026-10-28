@@ -106,7 +106,7 @@ Allowed dependencies: `rand`, `rand_chacha`, `rand_distr`, `thiserror`. Test-onl
   - Spring energy invariance: Σ_j ½ m ω_P²|q_j − q_{j+1}|² = Σ_k ½ m ω_k² q̃_k² to 1e-12 relative.
   - P = 1: matrix [1.0], frequencies [0.0].
   - Errors for P = 0, β ≤ 0, NaN.
-- **Harmonic:** energies and forces against hand-computed values at a few points (hand calculation in a comment); linearity of forces; per-bead independence (beads differing in position give independent energies); `Unsupported` for `subset = Some`; `ShapeMismatch` when `positions.n_atoms()` differs from the number of masses (P-1, Q2); error on non-positive mass, negative ω.
+- **Harmonic:** energies and forces against hand-computed values at a few points (hand calculation in a comment); linearity of forces; per-bead independence (beads differing in position give independent energies); `Unsupported` for `subset = Some`; `ShapeMismatch` when `positions.n_atoms()` differs from the number of masses (P-1, Q2); `Some(cell)` gives results bitwise equal to `None` (P-2, Q3); error on non-positive mass, negative ω.
 - **Finite-difference check** (independent): forces = −(numerical gradient of energies) to 1e-6 on random beads.
 
 ## Mutant ideas (at least four, from different rules)

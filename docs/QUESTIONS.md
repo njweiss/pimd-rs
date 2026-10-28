@@ -52,3 +52,4 @@ Proposed resolution: state in P-2 that `Harmonic` (and `DoubleWell`) ignore `cel
 milestone that `Some(cell)` gives the same result as `None`.
 Owner decision (2026-10-28): accept as proposed. SPEC P-2 now states that `Harmonic` and `DoubleWell` ignore `cell`;
 the `Some(cell)` == `None` test is added in a later milestone.
+Amended (2026-10-28, after M1 review): the test is added in M1 instead (`harmonic::cell_is_ignored`).
