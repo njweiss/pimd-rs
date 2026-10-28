@@ -8,7 +8,7 @@ A ring-polymer integrator (BAOAB with exact free propagation and PILE-L thermost
 
 ## Already done
 
-M1 merged. Error enums `IntegratorError`, `EstimatorError` and empty modules exist (Phase 0 addendum).
+M1 merged. Error enum `IntegratorError` and empty modules exist (Phase 0 addendum). There is no `EstimatorError` (Q4).
 
 ## In scope
 
@@ -58,6 +58,7 @@ impl RingPolymerSim {
 }
 
 // pimd_estimators  (all totals over atoms and components, in Eh)
+// Each panics if input shapes disagree (masses.len() != N, q/forces shapes differ, energies.len() != P); documented (Q4)
 pub fn spring_energy(q: &Beads, masses: &[f64], beta: f64) -> f64;                    // E-5
 pub fn kinetic_primitive(q: &Beads, masses: &[f64], beta: f64) -> f64;                // E-1
 pub fn kinetic_virial(q: &Beads, forces: &Beads, beta: f64) -> f64;                   // E-2
