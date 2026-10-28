@@ -9,3 +9,7 @@ license.workspace = true
 pimd-core.workspace = true
 pimd-potentials.workspace = true
 thiserror.workspace = true
+
+[features]
+# Long statistical validation runs (WORKFLOW "Long validation"); run by CHECK_LONG=1 scripts/check.sh.
+long-validation = []
