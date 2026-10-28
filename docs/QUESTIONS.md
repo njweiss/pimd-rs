@@ -54,7 +54,7 @@ Owner decision (2026-10-28): accept as proposed. SPEC P-2 now states that `Harmo
 the `Some(cell)` == `None` test is added in a later milestone.
 Amended (2026-10-28, after M1 review): the test is added in M1 instead (`harmonic::cell_is_ignored`).
 
-## Q4 (open) — `EstimatorError` is never returned by the briefed estimator API
+## Q4 (resolved) — `EstimatorError` is never returned by the briefed estimator API
 Milestone: 2   Raised by: Phase 0 addendum
 Spec text: MILESTONE_2 "Error enums `IntegratorError`, `EstimatorError` ... exist"; Public API: every
 `pimd_estimators` function returns plain `f64` (e.g. `spring_energy(q, masses, beta) -> f64`).
@@ -65,4 +65,5 @@ Options: (a) return `Result<f64, EstimatorError>` from each estimator; (b) keep 
 shape mismatch (a programming error, as decided for the transforms in Q2) and drop `EstimatorError`.
 Proposed resolution: (b). Estimators are called every sample step with inputs the simulation built itself,
 so a mismatch is a bug, not a recoverable condition; it matches Q2 and keeps the briefed signatures.
-Owner decision:
+Owner decision (2026-10-28): (b). Estimators keep `f64` returns and document a panic on shape mismatch;
+`EstimatorError` is removed and the M2 brief updated.
