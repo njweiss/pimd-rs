@@ -1,0 +1,18 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/pimd-core",
+    "crates/pimd-potentials",
+    "crates/pimd-integrators",
+    "crates/pimd-estimators",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+
+[workspace.dependencies]
+pimd-core = { path = "crates/pimd-core" }
+thiserror = "2"
