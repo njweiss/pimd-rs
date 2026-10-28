@@ -2,6 +2,8 @@
 //!
 //! This is the only place unit constants may appear.
 
+use crate::error::{CoreError, positive_finite};
+
 /// Boltzmann constant k_B, in Eh/K.
 pub const K_B_HARTREE_PER_KELVIN: f64 = 3.1668115634556e-6;
 
@@ -20,17 +22,10 @@ pub const HARTREE_IN_WAVENUMBERS: f64 = 219474.6313632;
 /// One hartree, in kcal/mol.
 pub const HARTREE_IN_KCAL_PER_MOL: f64 = 627.5094740631;
 
-use crate::error::CoreError;
-
 /// Inverse temperature β = 1/(k_B T) in Eh⁻¹, for `t_kelvin` in kelvin (U-4).
 ///
 /// Errors with `CoreError::InvalidValue` if `t_kelvin` is not positive and finite.
 pub fn beta_from_kelvin(t_kelvin: f64) -> Result<f64, CoreError> {
-    if !(t_kelvin.is_finite() && t_kelvin > 0.0) {
-        return Err(CoreError::InvalidValue {
-            what: "temperature (K)",
-            value: t_kelvin,
-        });
-    }
+    let t_kelvin = positive_finite("temperature (K)", t_kelvin)?;
     Ok(1.0 / (K_B_HARTREE_PER_KELVIN * t_kelvin))
 }

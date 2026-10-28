@@ -40,10 +40,9 @@ impl Potential for Harmonic {
     fn evaluate(
         &mut self,
         positions: &Beads,
-        cell: Option<&Cell>,
+        _cell: Option<&Cell>,
         subset: Option<&[usize]>,
     ) -> Result<Evaluation, PotentialError> {
-        let _ = cell;
         if subset.is_some() {
             return Err(PotentialError::Unsupported);
         }
