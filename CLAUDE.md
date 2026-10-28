@@ -49,7 +49,7 @@ pixi run test-validation        # same as CHECK_LONG=1 ./scripts/check.sh
 | Milestone | State |
 |---|---|
 | Phase 0 bootstrap | done |
-| M1 Foundations | not started |
+| M1 Foundations | merged |
 | M2 Ring-polymer sampling | not started |
 | M3 Classical core | not started |
 | M4 Quantum liquid, then release gate R1 | not started |
