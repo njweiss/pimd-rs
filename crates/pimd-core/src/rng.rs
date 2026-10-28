@@ -8,7 +8,7 @@ use rand_distr::StandardNormal;
 /// The single source of randomness (D-2): ChaCha8 seeded from a `u64`.
 ///
 /// Draw order is part of each caller's contract (D-4).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Rng {
     inner: ChaCha8Rng,
 }
