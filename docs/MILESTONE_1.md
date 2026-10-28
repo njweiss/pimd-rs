@@ -68,9 +68,11 @@ impl NormalModes {
     pub fn matrix(&self) -> &[f64];                // row-major P x P: C[j][k] at j*P + k
     pub fn to_normal(&self, beads: &Beads) -> Beads;   // q~_k = sum_j C_jk q_j, same shape, mode-major
     pub fn to_beads(&self, modes: &Beads) -> Beads;    // inverse (transpose)
+    // to_normal/to_beads panic if the input's n_beads() != P (programming error, documented; Q2)
 }
 
 // pimd_potentials
+pub enum PotentialError { Unsupported, InvalidParameter { what, value }, ShapeMismatch { expected: usize, actual: usize } } // atom counts (P-1, Q2)
 pub struct Evaluation { pub energies: Vec<f64>, pub forces: Beads, pub virial: Option<[[f64; 3]; 3]> }
 pub trait Potential {
     fn evaluate(
@@ -104,7 +106,7 @@ Allowed dependencies: `rand`, `rand_chacha`, `rand_distr`, `thiserror`. Test-onl
   - Spring energy invariance: Σ_j ½ m ω_P²|q_j − q_{j+1}|² = Σ_k ½ m ω_k² q̃_k² to 1e-12 relative.
   - P = 1: matrix [1.0], frequencies [0.0].
   - Errors for P = 0, β ≤ 0, NaN.
-- **Harmonic:** energies and forces against hand-computed values at a few points (hand calculation in a comment); linearity of forces; per-bead independence (beads differing in position give independent energies); `Unsupported` for `subset = Some`; error on non-positive mass, negative ω.
+- **Harmonic:** energies and forces against hand-computed values at a few points (hand calculation in a comment); linearity of forces; per-bead independence (beads differing in position give independent energies); `Unsupported` for `subset = Some`; `ShapeMismatch` when `positions.n_atoms()` differs from the number of masses (P-1, Q2); error on non-positive mass, negative ω.
 - **Finite-difference check** (independent): forces = −(numerical gradient of energies) to 1e-6 on random beads.
 
 ## Mutant ideas (at least four, from different rules)

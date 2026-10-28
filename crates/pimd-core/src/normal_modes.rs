@@ -51,12 +51,16 @@ impl NormalModes {
     /// Bead to normal-mode coordinates: q̃_k = Σ_j C_jk q_j, per atom and component.
     ///
     /// Same shape `[P, N, 3]` as the input, mode-major (mode k in place of bead j).
+    ///
+    /// Panics if `beads.n_beads()` differs from P.
     pub fn to_normal(&self, beads: &Beads) -> Beads {
         let _ = beads;
         unimplemented!()
     }
 
     /// Normal-mode to bead coordinates, the inverse of `to_normal`: q_j = Σ_k C_jk q̃_k.
+    ///
+    /// Panics if `modes.n_beads()` differs from P.
     pub fn to_beads(&self, modes: &Beads) -> Beads {
         let _ = modes;
         unimplemented!()

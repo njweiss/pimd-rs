@@ -16,4 +16,12 @@ pub enum PotentialError {
         /// The value that was rejected.
         value: f64,
     },
+    /// `positions.n_atoms()` differs from the number of atoms the potential was built for (P-1).
+    #[error("shape mismatch: potential has {expected} atoms, positions have {actual}")]
+    ShapeMismatch {
+        /// Number of atoms the potential was built for.
+        expected: usize,
+        /// `positions.n_atoms()`.
+        actual: usize,
+    },
 }

@@ -24,7 +24,7 @@ build the Fortran driver from the i-PI source tag matching pixi.lock. The `ipi` 
 Owner decision (2026-10-28): use LAMMPS `fix ipi` with `pair_style lj/cut` as the i-PI LJ client.
 The `ipi` task stays `i-pi`; the client is launched with the `lmp` task.
 
-## Q2 (open) — Shape mismatches have no error path in `Harmonic::evaluate` or `NormalModes` transforms
+## Q2 (resolved) — Shape mismatches have no error path in `Harmonic::evaluate` or `NormalModes` transforms
 Milestone: 1   Raised by: test author
 Spec text: P-1 "`Potential::evaluate(...) -> Result<Evaluation, PotentialError>`"; S-2 "Masses: one per atom";
 MILESTONE_1 `to_normal(&self, beads: &Beads) -> Beads`, `to_beads(&self, modes: &Beads) -> Beads`.
@@ -38,9 +38,10 @@ No M1 test exercises either case.
 Proposed resolution: add `PotentialError::ShapeMismatch { expected, actual }` (mirroring `CoreError`) and test it;
 document that `to_normal`/`to_beads` panic on a bead-count mismatch (a programming error), or make them
 return `Result<Beads, CoreError>`.
-Owner decision:
+Owner decision (2026-10-28): accept as proposed. Add `PotentialError::ShapeMismatch { expected, actual }` (atom counts),
+stated in SPEC P-1 and tested in M1; `to_normal`/`to_beads` keep their signatures and document a panic on a bead-count mismatch.
 
-## Q3 (open) — What `Harmonic` does with `cell = Some(..)`
+## Q3 (resolved) — What `Harmonic` does with `cell = Some(..)`
 Milestone: 1   Raised by: test author
 Spec text: C-1 "A cell is passed as `Option<&Cell>` everywhere"; P-2 "`Harmonic`: V = Σ_i ½ m_i ω² |q_i|²";
 MILESTONE_1 out of scope: "PBC in potentials".
@@ -49,4 +50,5 @@ What seems wrong / ambiguous: the spec does not say whether `Harmonic` ignores a
 periodic), applies `wrap`/`min_image` to q, or returns `Unsupported`. M1 tests only use `None`.
 Proposed resolution: state in P-2 that `Harmonic` (and `DoubleWell`) ignore `cell`, and add a test in a later
 milestone that `Some(cell)` gives the same result as `None`.
-Owner decision:
+Owner decision (2026-10-28): accept as proposed. SPEC P-2 now states that `Harmonic` and `DoubleWell` ignore `cell`;
+the `Some(cell)` == `None` test is added in a later milestone.
