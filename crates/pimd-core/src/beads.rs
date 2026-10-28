@@ -73,19 +73,20 @@ impl Beads {
 
     /// Centroid of each atom, the mean over beads: one 3-vector per atom, length N.
     pub fn centroid(&self) -> Vec<[f64; 3]> {
+        // Bead-major traversal (contiguous reads); each atom still sums beads j = 0..P−1 in order.
+        if self.n_atoms == 0 {
+            return Vec::new();
+        }
         let p = self.n_beads as f64;
-        (0..self.n_atoms)
-            .map(|i| {
-                let mut sum = [0.0; 3];
-                for j in 0..self.n_beads {
-                    let q = self.get(j, i);
-                    for d in 0..3 {
-                        sum[d] += q[d];
-                    }
+        let mut sums = vec![[0.0; 3]; self.n_atoms];
+        for slab in self.data.chunks_exact(self.n_atoms * 3) {
+            for (sum, q) in sums.iter_mut().zip(slab.chunks_exact(3)) {
+                for (s, x) in sum.iter_mut().zip(q) {
+                    *s += x;
                 }
-                sum.map(|s| s / p)
-            })
-            .collect()
+            }
+        }
+        sums.into_iter().map(|sum| sum.map(|s| s / p)).collect()
     }
 
     fn offset(&self, j: usize, i: usize) -> usize {

@@ -3,7 +3,7 @@
 use std::f64::consts::PI;
 
 use crate::beads::Beads;
-use crate::error::CoreError;
+use crate::error::{CoreError, positive_finite};
 
 /// Orthogonal normal-mode transform of a P-bead ring polymer (RP-4).
 ///
@@ -25,12 +25,7 @@ impl NormalModes {
         if n_beads == 0 {
             return Err(CoreError::InvalidBeadCount(n_beads));
         }
-        if !(beta.is_finite() && beta > 0.0) {
-            return Err(CoreError::InvalidValue {
-                what: "beta (1/Eh)",
-                value: beta,
-            });
-        }
+        positive_finite("beta (1/Eh)", beta)?;
         let p = n_beads;
         let pf = p as f64;
         let omega_p = pf / beta;

@@ -25,3 +25,12 @@ pub enum CoreError {
         actual: usize,
     },
 }
+
+/// Returns `v` if it is positive and finite, else `CoreError::InvalidValue` named `what`.
+pub(crate) fn positive_finite(what: &'static str, v: f64) -> Result<f64, CoreError> {
+    if v.is_finite() && v > 0.0 {
+        Ok(v)
+    } else {
+        Err(CoreError::InvalidValue { what, value: v })
+    }
+}

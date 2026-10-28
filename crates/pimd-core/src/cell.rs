@@ -1,6 +1,6 @@
 //! Orthorhombic simulation cell (SPEC §4).
 
-use crate::error::CoreError;
+use crate::error::{CoreError, positive_finite};
 
 /// Orthorhombic cell with three positive, finite edge lengths in bohr (C-1).
 ///
@@ -16,12 +16,7 @@ impl Cell {
     /// Errors with `CoreError::InvalidValue` unless every length is positive and finite.
     pub fn new(lengths: [f64; 3]) -> Result<Cell, CoreError> {
         for &l in &lengths {
-            if !(l.is_finite() && l > 0.0) {
-                return Err(CoreError::InvalidValue {
-                    what: "cell length (bohr)",
-                    value: l,
-                });
-            }
+            positive_finite("cell length (bohr)", l)?;
         }
         Ok(Cell { lengths })
     }
@@ -33,7 +28,8 @@ impl Cell {
             let l = self.lengths[k];
             let half = 0.5 * l;
             let mut x = d[k] - l * (d[k] / l).round();
-            // Rounding can leave x just outside the half-open interval; shift it back.
+            // Needed even with exact arithmetic: `round` sends ties away from zero, so d = −L/2
+            // gives +L/2. Rounding error can also leave x just outside the half-open interval.
             if x >= half {
                 x -= l;
             } else if x < -half {
