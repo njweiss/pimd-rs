@@ -119,5 +119,5 @@ Any integration, thermostat, estimator, neighbor list, LJ, PBC in potentials, co
 
 ## Acceptance
 
-- [ ] All tests pass; `check.sh` exits 0
-- [ ] Reviewer traceability table has no MISSING or UNTESTED rows
+- [x] All tests pass; `check.sh` exits 0
+- [x] Reviewer traceability table has no MISSING or UNTESTED rows
