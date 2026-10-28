@@ -12,3 +12,5 @@ pub mod units;
 pub use beads::Beads;
 pub use cell::Cell;
 pub use error::CoreError;
+pub use normal_modes::NormalModes;
+pub use rng::Rng;
