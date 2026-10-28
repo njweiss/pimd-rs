@@ -89,8 +89,8 @@ All return totals over atoms and Cartesian components, in Eh.
 
 ## 9. Potentials
 
-- **P-1** `Potential::evaluate(&mut self, positions: &Beads, cell: Option<&Cell>, subset: Option<&[usize]>) -> Result<Evaluation, PotentialError>`; `Evaluation { energies: Vec<f64> /*[P]*/, forces: Beads, virial: Option<[[f64;3];3]> }`.
-- **P-2** `Harmonic`: V = Σ_i ½ m_i ω² |q_i|². `DoubleWell`: separable over every Cartesian component, V(x) = a x⁴ − b x², a, b > 0.
+- **P-1** `Potential::evaluate(&mut self, positions: &Beads, cell: Option<&Cell>, subset: Option<&[usize]>) -> Result<Evaluation, PotentialError>`; `Evaluation { energies: Vec<f64> /*[P]*/, forces: Beads, virial: Option<[[f64;3];3]> }`. If `positions.n_atoms()` differs from the number of atoms the potential was built for, it returns `Err(PotentialError::ShapeMismatch { expected, actual })` (atom counts).
+- **P-2** `Harmonic`: V = Σ_i ½ m_i ω² |q_i|². `DoubleWell`: separable over every Cartesian component, V(x) = a x⁴ − b x², a, b > 0. Both are external fields, not periodic: they ignore `cell`.
 - **P-3** `LennardJones`: V(r) = 4ε[(σ/r)¹² − (σ/r)⁶] for r < r_c, 0 otherwise. If `shift`, V(r_c) is subtracted inside r < r_c. No tail corrections. Forces are the exact derivative (discontinuous at r_c when unshifted, matching LAMMPS `lj/cut`).
 - **P-4** Native potentials return `Err(PotentialError::Unsupported)` when `subset` is `Some`.
 - **P-5** `virial` is `Some(W)` for `LennardJones` when P = 1 (W as in E-8, in Eh) and `None` when P > 1; other potentials may return `None`.

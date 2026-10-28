@@ -225,6 +225,22 @@ fn subset_is_unsupported() {
     assert!(h.evaluate(&q, None, None).is_ok());
 }
 
+/// P-1, S-2: positions whose atom count differs from the number of masses give
+/// `ShapeMismatch { expected: masses, actual: positions }`, for more and for fewer atoms.
+#[test]
+fn atom_count_mismatch_is_shape_mismatch() {
+    let mut h = Harmonic::new(vec![1.0, 2.0], 0.5).unwrap();
+    for n in [1, 3] {
+        assert_eq!(
+            h.evaluate(&Beads::zeros(2, n), None, None).unwrap_err(),
+            PotentialError::ShapeMismatch {
+                expected: 2,
+                actual: n
+            }
+        );
+    }
+}
+
 /// P-2, S-2: non-positive or non-finite masses, and negative or non-finite ω, are
 /// `InvalidParameter`; ω = 0 and positive finite masses are accepted.
 #[test]
