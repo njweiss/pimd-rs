@@ -81,10 +81,20 @@ dependencies = [
 [[package]]
 name = "pimd-estimators"
 version = "0.1.0"
+dependencies = [
+ "pimd-core",
+ "pimd-integrators",
+ "thiserror",
+]
 
 [[package]]
 name = "pimd-integrators"
 version = "0.1.0"
+dependencies = [
+ "pimd-core",
+ "pimd-potentials",
+ "thiserror",
+]
 
 [[package]]
 name = "pimd-potentials"

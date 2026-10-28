@@ -53,3 +53,16 @@ milestone that `Some(cell)` gives the same result as `None`.
 Owner decision (2026-10-28): accept as proposed. SPEC P-2 now states that `Harmonic` and `DoubleWell` ignore `cell`;
 the `Some(cell)` == `None` test is added in a later milestone.
 Amended (2026-10-28, after M1 review): the test is added in M1 instead (`harmonic::cell_is_ignored`).
+
+## Q4 (open) — `EstimatorError` is never returned by the briefed estimator API
+Milestone: 2   Raised by: Phase 0 addendum
+Spec text: MILESTONE_2 "Error enums `IntegratorError`, `EstimatorError` ... exist"; Public API: every
+`pimd_estimators` function returns plain `f64` (e.g. `spring_energy(q, masses, beta) -> f64`).
+Test or code: crates/pimd-estimators/src/error.rs (`EstimatorError::ShapeMismatch`).
+What seems wrong / ambiguous: with `f64` returns there is no error path, so a wrong `masses.len()`,
+mismatched `q`/`forces` shapes or `energies.len() != P` can only panic, and `EstimatorError` is dead.
+Options: (a) return `Result<f64, EstimatorError>` from each estimator; (b) keep `f64`, document a panic on
+shape mismatch (a programming error, as decided for the transforms in Q2) and drop `EstimatorError`.
+Proposed resolution: (b). Estimators are called every sample step with inputs the simulation built itself,
+so a mismatch is a bug, not a recoverable condition; it matches Q2 and keeps the briefed signatures.
+Owner decision:

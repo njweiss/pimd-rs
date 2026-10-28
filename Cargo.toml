@@ -15,6 +15,8 @@ license = "MIT"
 
 [workspace.dependencies]
 pimd-core = { path = "crates/pimd-core" }
+pimd-potentials = { path = "crates/pimd-potentials" }
+pimd-integrators = { path = "crates/pimd-integrators" }
 thiserror = "2"
 rand = "0.10"
 rand_chacha = "0.10"
