@@ -247,3 +247,22 @@ fn too_few_atoms_and_no_samples() {
     assert_eq!(rdf.n_samples(), 0);
     assert_eq!(rdf.g(), vec![0.0; 5]);
 }
+
+/// E-7 (Q12): a configuration with no beads (P = 0) is `ShapeMismatch` and leaves the
+/// accumulator unchanged: a later valid sample gives the same g as on a fresh `Rdf`.
+#[test]
+fn zero_beads_is_rejected() {
+    let cell = Cell::new([10.0; 3]).unwrap();
+    let mut rdf = Rdf::new(5, 5.0, cell, 2).unwrap();
+    assert!(matches!(
+        rdf.accumulate(&Beads::zeros(0, 2)),
+        Err(EstimatorError::ShapeMismatch { .. })
+    ));
+    assert_eq!(rdf.n_samples(), 0);
+    let q = conf(&[vec![[0.5; 3], [2.0, 0.5, 0.5]]]);
+    rdf.accumulate(&q).unwrap();
+    let mut fresh = Rdf::new(5, 5.0, cell, 2).unwrap();
+    fresh.accumulate(&q).unwrap();
+    assert_eq!(rdf.g(), fresh.g());
+    assert_eq!(rdf.n_samples(), 1);
+}
