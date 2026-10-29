@@ -91,6 +91,7 @@ checkpoint_every = 1000
 - **Restart determinism:** a run of 2K steps equals a run of K steps → checkpoint → K more, bitwise, including RNG state, accumulated observables and the RDF accumulator. Checkpoints contain everything needed (positions, momenta, forces, energies, RNG, step counter, accumulators); a mismatching config (hash) is an error.
 - **Outputs:** `observables.csv` (step, E_prim, E_vir, V, T-estimate columns), `rdf.csv`, `checkpoint.bin`, `run.log` (seed, versions, config echo).
 
+- **`Cell::min_length()` (owner-approved after M3):** new public method returning the shortest cell edge (bohr); replaces the three copies of the L_min fold in `NeighborList::build`, `Rdf::new` and `LennardJones::evaluate`. Bit-identical.
 - **Last evaluation (Q8):** the run driver keeps the `Evaluation` of the latest step (energies and, at P = 1, the virial) so observables never need an extra `evaluate`. Whether `VelocityVerlet::step` returns it or a driver holds it is decided when this brief is finalised.
 
 ## Required tests
