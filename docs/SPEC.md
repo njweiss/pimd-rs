@@ -71,7 +71,7 @@ Non-goals: training MLIPs, a general-purpose MD package, electrostatics (Ewald/P
   p̃_k ← c_k p̃_k + sqrt((1 − c_k²)·m_i·P/β)·ξ, with c_k = exp(−γ_k·dt) and ξ ~ N(0,1).
   Draw order: k = 0..P−1 (in `NormalModes` column order) outermost, then atom i, then dimension d; one normal per (k, i, d) per O step.
 - **T-2** γ_0 = 1/τ_0 for configured τ_0 (`None` ⇒ γ_0 = 0). For every mode with ω_k > 0, γ_k = 2 ω_k.
-- **T-3** `Thermostat::Off` applies the identity; with it, the dynamics conserve H_P with error O(dt²).
+- **T-3** `Thermostat::Off` applies the identity and draws no random numbers; with it, the dynamics conserve H_P with error O(dt²).
 
 ## 8. Estimators
 

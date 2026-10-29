@@ -68,7 +68,7 @@ so a mismatch is a bug, not a recoverable condition; it matches Q2 and keeps the
 Owner decision (2026-10-28): (b). Estimators keep `f64` returns and document a panic on shape mismatch;
 `EstimatorError` is removed and the M2 brief updated.
 
-## Q5 (open) — `validation/verify_reference_data.py` does not exist, but M2 adds the first reference data
+## Q5 (resolved) — `validation/verify_reference_data.py` does not exist, but M2 adds the first reference data
 Milestone: 2   Raised by: test author
 Spec text: WORKFLOW "Long validation": `CHECK_LONG=1 ./scripts/check.sh` runs the long tests "together with
 `validation/verify_reference_data.py`, which regenerates reference data into a temporary directory and compares it
@@ -82,9 +82,9 @@ Proposed resolution: the owner (or a small chore commit outside the locked tests
 every `crates/*/tests/data/gen_*.py --out <tmpdir>` (the M2 generator already accepts `--out`) and compares each
 JSON leaf numerically with the committed file (rtol 1e-9, atol 1e-12; strings compared exactly except the
 `versions` block, which is reported, not compared). Runtime of the M2 generator: about 50 s.
-Owner decision:
+Owner decision (2026-10-29): accept as proposed. `validation/verify_reference_data.py` added in a chore commit.
 
-## Q6 (open) — Does `Thermostat::Off` consume random numbers?
+## Q6 (resolved) — Does `Thermostat::Off` consume random numbers?
 Milestone: 2   Raised by: test author
 Spec text: T-1 "one normal per (k, i, d) per O step"; T-3 "`Thermostat::Off` applies the identity"; I-1 "O: thermostat
 step (T-1), or identity if the thermostat is off"; D-4 "Every stochastic step documents its draw order."
@@ -93,4 +93,5 @@ What seems wrong / ambiguous: the spec does not say outright whether the identit
 normals (keeping the stream aligned with a PILE-L run) or draws none. The test pins "draws none" (Off is not a
 stochastic step, so it has no draw order), and also requires the state to be bitwise unchanged.
 Proposed resolution: state in T-3 "`Thermostat::Off` draws no random numbers".
-Owner decision:
+Owner decision (2026-10-29): accept as proposed. SPEC T-3 now reads "`Thermostat::Off` applies the identity and
+draws no random numbers".
