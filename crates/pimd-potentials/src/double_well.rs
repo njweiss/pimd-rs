@@ -10,17 +10,19 @@ use crate::potential::{Evaluation, Potential};
 /// `a` in Eh/bohr⁴, `b` in Eh/bohr². Accepts any number of atoms.
 #[derive(Debug, Clone)]
 pub struct DoubleWell {
-    #[allow(dead_code)] // Phase A stub: used once implemented.
     a: f64,
-    #[allow(dead_code)] // Phase A stub: used once implemented.
     b: f64,
 }
 
 impl DoubleWell {
     /// `a` and `b` positive and finite; errors with `PotentialError::InvalidParameter` otherwise.
     pub fn new(a: f64, b: f64) -> Result<DoubleWell, PotentialError> {
-        let _ = (a, b);
-        unimplemented!()
+        for (what, v) in [("a (Eh/bohr^4)", a), ("b (Eh/bohr^2)", b)] {
+            if !(v.is_finite() && v > 0.0) {
+                return Err(PotentialError::InvalidParameter { what, value: v });
+            }
+        }
+        Ok(DoubleWell { a, b })
     }
 }
 
@@ -29,10 +31,30 @@ impl Potential for DoubleWell {
     fn evaluate(
         &mut self,
         positions: &Beads,
-        cell: Option<&Cell>,
+        _cell: Option<&Cell>,
         subset: Option<&[usize]>,
     ) -> Result<Evaluation, PotentialError> {
-        let _ = (positions, cell, subset);
-        unimplemented!()
+        if subset.is_some() {
+            return Err(PotentialError::Unsupported);
+        }
+        let (p, n3) = (positions.n_beads(), positions.n_atoms() * 3);
+        let mut energies = Vec::with_capacity(p);
+        let mut forces = Beads::zeros(p, positions.n_atoms());
+        let (xs, fs) = (positions.as_slice(), forces.as_mut_slice());
+        for j in 0..p {
+            let bead = j * n3..(j + 1) * n3;
+            let mut e = 0.0;
+            for (&x, f) in xs[bead.clone()].iter().zip(&mut fs[bead]) {
+                let x2 = x * x;
+                e += self.a * x2 * x2 - self.b * x2;
+                *f = -(4.0 * self.a * x2 * x - 2.0 * self.b * x);
+            }
+            energies.push(e);
+        }
+        Ok(Evaluation {
+            energies,
+            forces,
+            virial: None,
+        })
     }
 }
