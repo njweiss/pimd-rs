@@ -536,10 +536,8 @@ fn virial_symmetric_and_only_for_p1() {
 }
 
 /// C-4: with a cell, cutoff + skin > L_min/2 is an error, for the short axis in each direction
-/// and for P = 1 and P = 2; cutoff + skin = L_min/2 exactly is accepted. (Which `PotentialError`
-/// variant is not pinned by the spec; see QUESTIONS.md Q7. Only `Err` is asserted, and it must
-/// not be `Unsupported` or `ShapeMismatch`, which mean other things, P-1, P-4.) Open boundaries
-/// accept any cutoff.
+/// and for P = 1 and P = 2, with `PotentialError::InvalidParameter` (Q7); cutoff + skin = L_min/2
+/// exactly is accepted. Open boundaries accept any cutoff.
 #[test]
 fn cell_too_small_is_rejected() {
     // r_c + skin = 3.35: L_min/2 must be ≥ 3.35.
@@ -555,10 +553,8 @@ fn cell_too_small_is_rejected() {
             }
             let r = random_lj(false).evaluate(&q, Some(&cell), None);
             match r {
-                Err(PotentialError::Unsupported) | Err(PotentialError::ShapeMismatch { .. }) => {
-                    panic!("axis {axis}: wrong error kind {:?}", r.err())
-                }
-                Err(_) => {}
+                Err(PotentialError::InvalidParameter { .. }) => {}
+                Err(e) => panic!("axis {axis}, P = {p}: wrong error kind {e:?} (Q7)"),
                 Ok(_) => panic!("axis {axis}, P = {p}: cutoff + skin > L_min/2 accepted (C-4)"),
             }
         }

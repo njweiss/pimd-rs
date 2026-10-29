@@ -3,8 +3,8 @@
 use crate::cell::Cell;
 use crate::error::CoreError;
 
-/// Verlet list of full pairs (N-1): `neighbors(i)` holds every j ≠ i within `cutoff + skin` of i
-/// (minimum image when built with a cell), sorted ascending. Remembers the positions it was built
+/// Verlet list of full pairs (N-1): `neighbors(i)` holds every j ≠ i with r_ij < `cutoff + skin`
+/// (strict; minimum image when built with a cell), sorted ascending. Remembers the positions it was built
 /// from for the rebuild criterion (N-2).
 ///
 /// Lengths in bohr. Positions are `[N]` 3-vectors in bohr, unwrapped (C-5).
@@ -40,7 +40,8 @@ impl NeighborList {
     }
 
     /// True when any atom has moved more than `skin/2` (Euclidean norm, bohr) from the positions of
-    /// the last build, measured in unwrapped coordinates (N-2).
+    /// the last build, measured in unwrapped coordinates, or when `positions.len()` differs from
+    /// the last build's atom count (N-2, Q10).
     pub fn needs_rebuild(&self, positions: &[[f64; 3]]) -> bool {
         let _ = positions;
         unimplemented!()

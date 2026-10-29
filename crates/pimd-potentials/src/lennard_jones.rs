@@ -49,8 +49,9 @@ impl Potential for LennardJones {
     /// (P-5). Each atom's force and energy come from its own full neighbor list and per-atom values
     /// are reduced in index order, so results do not depend on the thread count (D-3).
     ///
-    /// Errors: `PotentialError::Unsupported` for `subset = Some` (P-4); an error when a cell is
-    /// given and `cutoff + skin > L_min/2` (C-4).
+    /// Errors: `PotentialError::Unsupported` for `subset = Some` (P-4);
+    /// `PotentialError::InvalidParameter` when a cell is given and `cutoff + skin > L_min/2` (C-4,
+    /// Q7).
     fn evaluate(
         &mut self,
         positions: &Beads,

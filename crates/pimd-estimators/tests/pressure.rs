@@ -204,6 +204,20 @@ fn snapshot_matches_lammps() {
     }
 }
 
+/// Q10: `kinetic_classical` is defined for P = 1 only; momenta with P = 2 or P = 3 are a
+/// programming error and panic, also when the masses match N.
+#[test]
+fn kinetic_panics_for_more_than_one_bead() {
+    for p in [2, 3] {
+        assert!(
+            panics_for_real(|| {
+                kinetic_classical(&[2.0, 3.0], &Beads::zeros(p, 2));
+            }),
+            "P = {p}"
+        );
+    }
+}
+
 /// E-8 (P = 1): momenta with P = 2 give `ShapeMismatch`; masses whose count differs from N give
 /// `ShapeMismatch`.
 #[test]
