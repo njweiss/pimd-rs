@@ -411,3 +411,53 @@ fn new_validates_and_n_atoms_follows_build() {
     assert_eq!(nl.n_atoms(), 10);
     assert_matches_brute(&nl, &x[..10], None, 2.0, "rebuilt with 10 atoms");
 }
+
+/// N-1 (Q10): membership is strict, r_ij < cutoff + skin. cutoff 2, skin 1 (rl = 3, exact in
+/// binary). Open: atoms at x = 0 and 3 (r = 3 exactly, not listed); a third atom at x = −2.5 is
+/// 2.5 from atom 0 (listed) and 5.5 from atom 1. Periodic L = 10: atoms
+/// at x = 0.5 and 7.5 are 3 apart through the minimum image (7 − 10 = −3, exact): not listed;
+/// moving the second to 7.75 (7.25 − 10 = −2.75) lists the pair.
+#[test]
+fn membership_is_strict_at_cutoff_plus_skin() {
+    let mut nl = NeighborList::new(2.0, 1.0).unwrap();
+    let x = vec![[0.0; 3], [3.0, 0.0, 0.0], [-2.5, 0.0, 0.0]];
+    nl.build(&x, None).unwrap();
+    assert_eq!(nl.neighbors(0), &[2], "open: r01 = 3 must not be listed");
+    assert_eq!(nl.neighbors(1), &[] as &[usize]);
+    assert_eq!(nl.neighbors(2), &[0]);
+    let cell = Cell::new([10.0; 3]).unwrap();
+    let y = vec![[0.5, 1.0, 1.0], [7.5, 1.0, 1.0]];
+    nl.build(&y, Some(&cell)).unwrap();
+    assert_eq!(
+        nl.neighbors(0),
+        &[] as &[usize],
+        "periodic: min-image r = 3"
+    );
+    assert_eq!(nl.neighbors(1), &[] as &[usize]);
+    let z = vec![[0.5, 1.0, 1.0], [7.75, 1.0, 1.0]];
+    nl.build(&z, Some(&cell)).unwrap();
+    assert_eq!(nl.neighbors(0), &[1], "periodic: min-image r = 2.75");
+    assert_eq!(nl.neighbors(1), &[0]);
+}
+
+/// N-2 (Q10): `needs_rebuild` is true when the atom count differs from the last build (fewer or
+/// more atoms), even if the common atoms have not moved; after a rebuild at the new count it is
+/// false again.
+#[test]
+fn rebuild_on_atom_count_change() {
+    for periodic in [false, true] {
+        let (mut nl, x, cell) = rebuild_setup(periodic);
+        assert!(!nl.needs_rebuild(&x));
+        assert!(
+            nl.needs_rebuild(&x[..49]),
+            "periodic {periodic}: 49 of 50 atoms"
+        );
+        assert!(nl.needs_rebuild(&[]), "periodic {periodic}: no atoms");
+        let mut more = x.clone();
+        more.push([5.0, 5.0, 5.0]);
+        assert!(nl.needs_rebuild(&more), "periodic {periodic}: 51 atoms");
+        nl.build(&more, cell.as_ref()).unwrap();
+        assert!(!nl.needs_rebuild(&more));
+        assert!(nl.needs_rebuild(&x), "periodic {periodic}: back to 50");
+    }
+}

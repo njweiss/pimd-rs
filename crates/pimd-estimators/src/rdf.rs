@@ -26,7 +26,8 @@ impl Rdf {
     /// Empty RDF with `n_bins` ≥ 1 bins on [0, `r_max`] (bohr, > 0, ≤ L_min/2) for `n_atoms` atoms
     /// in `cell`.
     ///
-    /// Errors with `EstimatorError::InvalidValue` for a bad bin count or `r_max`.
+    /// Errors with `EstimatorError::InvalidValue` for a bad bin count, a bad `r_max` or
+    /// `n_atoms < 2` (Q10).
     pub fn new(
         n_bins: usize,
         r_max: f64,
@@ -56,7 +57,8 @@ impl Rdf {
         unimplemented!()
     }
 
-    /// g_b = 2 C_b V / (P N (N − 1) V_shell(b)) (E-7), averaged over the accumulated samples.
+    /// g_b = 2 C_b V / (P N (N − 1) V_shell(b)) (E-7), averaged over the accumulated samples; all
+    /// zeros before the first sample (Q10).
     pub fn g(&self) -> Vec<f64> {
         unimplemented!()
     }

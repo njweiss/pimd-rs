@@ -8,7 +8,8 @@ pub enum PotentialError {
     /// The request is valid but this potential does not support it, e.g. `subset = Some` (P-4).
     #[error("operation not supported by this potential")]
     Unsupported,
-    /// A constructor parameter was out of range or non-finite (mass, frequency, ...).
+    /// A parameter, or a parameter combined with the cell, was out of range or non-finite (mass,
+    /// frequency, ..., or `cutoff + skin > L_min/2` in `evaluate`, C-4, Q7).
     #[error("invalid {what}: {value}")]
     InvalidParameter {
         /// Name of the offending parameter.

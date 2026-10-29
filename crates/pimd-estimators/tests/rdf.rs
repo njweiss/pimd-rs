@@ -227,3 +227,23 @@ fn errors() {
     }
     assert!(rdf.accumulate(&Beads::zeros(2, 4)).is_ok());
 }
+
+/// E-7 (Q10): N(N − 1) must be non-zero, so `Rdf::new` with 0 or 1 atoms is `InvalidValue`; 2
+/// atoms are accepted. Before any `accumulate`, `g` is all zeros (length `n_bins`) and
+/// `n_samples` is 0.
+#[test]
+fn too_few_atoms_and_no_samples() {
+    let cell = Cell::new([10.0; 3]).unwrap();
+    for n in [0, 1] {
+        assert!(
+            matches!(
+                Rdf::new(5, 5.0, cell, n),
+                Err(EstimatorError::InvalidValue { .. })
+            ),
+            "{n} atoms"
+        );
+    }
+    let rdf = Rdf::new(5, 5.0, cell, 2).unwrap();
+    assert_eq!(rdf.n_samples(), 0);
+    assert_eq!(rdf.g(), vec![0.0; 5]);
+}

@@ -6,8 +6,8 @@ use crate::error::EstimatorError;
 
 /// K = Σ_i |p_i|²/(2 m_i), Eh, for momenta `p` (`[1, N, 3]`, atomic units) and `masses` (m_e).
 ///
-/// Panics if `masses.len()` differs from N (a programming error, as for the other energy
-/// estimators, Q4).
+/// Panics if `masses.len()` differs from N or `p` has P ≠ 1 (a programming error, as for the
+/// other energy estimators, Q4, Q10).
 pub fn kinetic_classical(masses: &[f64], p: &Beads) -> f64 {
     let _ = (masses, p);
     unimplemented!()
