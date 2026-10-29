@@ -9,8 +9,16 @@ use crate::error::EstimatorError;
 /// Panics if `masses.len()` differs from N or `p` has P ≠ 1 (a programming error, as for the
 /// other energy estimators, Q4, Q10).
 pub fn kinetic_classical(masses: &[f64], p: &Beads) -> f64 {
-    let _ = (masses, p);
-    unimplemented!()
+    assert_eq!(p.n_beads(), 1, "kinetic_classical needs P = 1");
+    assert_eq!(masses.len(), p.n_atoms(), "number of masses vs atoms");
+    masses
+        .iter()
+        .enumerate()
+        .map(|(i, &m)| {
+            let v = p.get(0, i);
+            (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) / (2.0 * m)
+        })
+        .sum()
 }
 
 /// p = (2K + tr W)/(3V) in Eh/bohr³ (E-8), with K from `kinetic_classical`, the virial `virial`
@@ -23,6 +31,19 @@ pub fn pressure_classical(
     virial: [[f64; 3]; 3],
     cell: &Cell,
 ) -> Result<f64, EstimatorError> {
-    let _ = (masses, p, virial, cell);
-    unimplemented!()
+    for (what, expected, actual) in [
+        ("bead count of momenta (P = 1)", 1, p.n_beads()),
+        ("number of masses", p.n_atoms(), masses.len()),
+    ] {
+        if expected != actual {
+            return Err(EstimatorError::ShapeMismatch {
+                what,
+                expected,
+                actual,
+            });
+        }
+    }
+    let k = kinetic_classical(masses, p);
+    let tr_w = virial[0][0] + virial[1][1] + virial[2][2];
+    Ok((2.0 * k + tr_w) / (3.0 * cell.volume()))
 }

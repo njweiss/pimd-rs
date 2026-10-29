@@ -8,17 +8,11 @@ use crate::error::EstimatorError;
 /// [0, r_max] (bohr), accumulated over samples (E-7). Requires a cell and r_max ≤ L_min/2.
 #[derive(Debug, Clone)]
 pub struct Rdf {
-    #[allow(dead_code)] // Phase A stub: used once implemented.
     n_bins: usize,
-    #[allow(dead_code)] // Phase A stub: used once implemented.
     r_max: f64,
-    #[allow(dead_code)] // Phase A stub: used once implemented.
     counts: Vec<f64>,
-    #[allow(dead_code)] // Phase A stub: used once implemented.
     n_atoms: usize,
-    #[allow(dead_code)] // Phase A stub: used once implemented.
     cell: Cell,
-    #[allow(dead_code)] // Phase A stub: used once implemented.
     n_samples: usize,
 }
 
@@ -34,8 +28,33 @@ impl Rdf {
         cell: Cell,
         n_atoms: usize,
     ) -> Result<Rdf, EstimatorError> {
-        let _ = (n_bins, r_max, cell, n_atoms);
-        unimplemented!()
+        if n_bins == 0 {
+            return Err(EstimatorError::InvalidValue {
+                what: "RDF bin count",
+                value: 0.0,
+            });
+        }
+        let l_min = cell.lengths().into_iter().fold(f64::INFINITY, f64::min);
+        if !(r_max.is_finite() && r_max > 0.0 && r_max <= 0.5 * l_min) {
+            return Err(EstimatorError::InvalidValue {
+                what: "RDF r_max (bohr), must be in (0, L_min/2]",
+                value: r_max,
+            });
+        }
+        if n_atoms < 2 {
+            return Err(EstimatorError::InvalidValue {
+                what: "RDF atom count (need N >= 2)",
+                value: n_atoms as f64,
+            });
+        }
+        Ok(Rdf {
+            n_bins,
+            r_max,
+            counts: vec![0.0; n_bins],
+            n_atoms,
+            cell,
+            n_samples: 0,
+        })
     }
 
     /// Adds one configuration: all beads of `q` (`[P, N, 3]`, bohr, unwrapped), pairs i < j within
@@ -43,23 +62,71 @@ impl Rdf {
     ///
     /// Errors with `EstimatorError::ShapeMismatch` if `q.n_atoms()` differs from `n_atoms`.
     pub fn accumulate(&mut self, q: &Beads) -> Result<(), EstimatorError> {
-        let _ = q;
-        unimplemented!()
+        if q.n_atoms() != self.n_atoms {
+            return Err(EstimatorError::ShapeMismatch {
+                what: "atom count of RDF positions",
+                expected: self.n_atoms,
+                actual: q.n_atoms(),
+            });
+        }
+        let inv_dr = self.n_bins as f64 / self.r_max;
+        let r_max2 = self.r_max * self.r_max;
+        let mut hist = vec![0usize; self.n_bins];
+        for j in 0..q.n_beads() {
+            for a in 0..self.n_atoms {
+                let ra = q.get(j, a);
+                for b in a + 1..self.n_atoms {
+                    let rb = q.get(j, b);
+                    let d = self
+                        .cell
+                        .min_image([rb[0] - ra[0], rb[1] - ra[1], rb[2] - ra[2]]);
+                    let r2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+                    if r2 < r_max2 {
+                        let bin = (r2.sqrt() * inv_dr) as usize;
+                        if bin < self.n_bins {
+                            hist[bin] += 1;
+                        }
+                    }
+                }
+            }
+        }
+        // C_b / P per sample (E-7), so samples with different P average correctly.
+        let pf = q.n_beads() as f64;
+        for (c, &h) in self.counts.iter_mut().zip(&hist) {
+            *c += h as f64 / pf;
+        }
+        self.n_samples += 1;
+        Ok(())
     }
 
     /// Number of configurations accumulated.
     pub fn n_samples(&self) -> usize {
-        unimplemented!()
+        self.n_samples
     }
 
     /// Bin centres (r_b + r_{b+1})/2, bohr, length `n_bins`.
     pub fn bin_centers(&self) -> Vec<f64> {
-        unimplemented!()
+        let dr = self.r_max / self.n_bins as f64;
+        (0..self.n_bins).map(|b| (b as f64 + 0.5) * dr).collect()
     }
 
     /// g_b = 2 C_b V / (P N (N − 1) V_shell(b)) (E-7), averaged over the accumulated samples; all
     /// zeros before the first sample (Q10).
     pub fn g(&self) -> Vec<f64> {
-        unimplemented!()
+        if self.n_samples == 0 {
+            return vec![0.0; self.n_bins];
+        }
+        let dr = self.r_max / self.n_bins as f64;
+        let n = self.n_atoms as f64;
+        let norm = 2.0 * self.cell.volume() / (n * (n - 1.0) * self.n_samples as f64);
+        self.counts
+            .iter()
+            .enumerate()
+            .map(|(b, &c)| {
+                let (lo, hi) = (b as f64 * dr, (b + 1) as f64 * dr);
+                let shell = 4.0 * std::f64::consts::PI / 3.0 * (hi.powi(3) - lo.powi(3));
+                norm * c / shell
+            })
+            .collect()
     }
 }

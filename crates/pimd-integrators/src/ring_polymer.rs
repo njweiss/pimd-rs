@@ -44,7 +44,7 @@ pub struct RingPolymerIntegrator {
 }
 
 /// Returns `v` if it is positive and finite, else `IntegratorError::InvalidValue` named `what`.
-fn positive_finite(what: &'static str, v: f64) -> Result<f64, IntegratorError> {
+pub(crate) fn positive_finite(what: &'static str, v: f64) -> Result<f64, IntegratorError> {
     if v.is_finite() && v > 0.0 {
         Ok(v)
     } else {
@@ -198,7 +198,7 @@ impl RingPolymerIntegrator {
 
 /// `IntegratorError::ShapeMismatch` unless `ev` has forces of shape `[p, n, 3]` and `p`
 /// energies (P-1).
-fn check_evaluation(ev: &Evaluation, p: usize, n: usize) -> Result<(), IntegratorError> {
+pub(crate) fn check_evaluation(ev: &Evaluation, p: usize, n: usize) -> Result<(), IntegratorError> {
     check_sizes(&[
         ("bead count of evaluated forces", p, ev.forces.n_beads()),
         ("atom count of evaluated forces", n, ev.forces.n_atoms()),
@@ -207,7 +207,7 @@ fn check_evaluation(ev: &Evaluation, p: usize, n: usize) -> Result<(), Integrato
 }
 
 /// The first `(what, expected, actual)` with `expected != actual`, as `ShapeMismatch`.
-fn check_sizes(checks: &[(&'static str, usize, usize)]) -> Result<(), IntegratorError> {
+pub(crate) fn check_sizes(checks: &[(&'static str, usize, usize)]) -> Result<(), IntegratorError> {
     for &(what, expected, actual) in checks {
         if expected != actual {
             return Err(IntegratorError::ShapeMismatch {
@@ -221,7 +221,7 @@ fn check_sizes(checks: &[(&'static str, usize, usize)]) -> Result<(), Integrator
 }
 
 /// p ← p + h·F, element-wise (the B step of I-1 with h = dt/2).
-fn kick(p: &mut Beads, f: &Beads, h: f64) {
+pub(crate) fn kick(p: &mut Beads, f: &Beads, h: f64) {
     for (p, f) in p.as_mut_slice().iter_mut().zip(f.as_slice()) {
         *p += h * f;
     }
