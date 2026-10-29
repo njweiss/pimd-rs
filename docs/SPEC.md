@@ -83,7 +83,7 @@ All return totals over atoms and Cartesian components, in Eh. The energy estimat
 - **E-4** Total energy estimators: E_prim = K_prim + V̄; E_vir = K_vir + V̄. Both have expectation −∂ ln Z_P/∂β of the finite-P system.
 - **E-5** Spring energy: Σ_j Σ_i ½ m_i ω_P² |q_{j,i} − q_{j+1,i}|².
 - **E-6** Virial estimator uses −∇V forces only (S-3).
-- **E-7** RDF: `n_bins` bins on [0, r_max], r_max ≤ L_min/2, cell required. With C_b the number of pair distances (i < j) over all beads falling in bin b and V_shell(b) = (4π/3)(r_{b+1}³ − r_b³): g_b = 2·C_b·V / (P·N·(N−1)·V_shell(b)). An ideal gas gives g = 1 in expectation. Requires N ≥ 2 (else `InvalidValue`); before any sample g is all zeros (Q10).
+- **E-7** RDF: `n_bins` equal bins on [0, r_max) (pairs with r ≥ r_max are not counted; a distance below r_max that rounds past the last bin goes into the last bin), r_max ≤ L_min/2, cell required; a configuration with P = 0 is `ShapeMismatch` (Q12). With C_b the number of pair distances (i < j) over all beads falling in bin b and V_shell(b) = (4π/3)(r_{b+1}³ − r_b³): g_b = 2·C_b·V / (P·N·(N−1)·V_shell(b)). An ideal gas gives g = 1 in expectation. Requires N ≥ 2 (else `InvalidValue`); before any sample g is all zeros (Q10).
 - **E-8** Classical pressure (P = 1): p = (2K + tr W)/(3V), with K = Σ_i |p_i|²/(2 m_i), virial W = Σ_{i<j} r_ij ⊗ f_ij, r_ij = r_i − r_j, f_ij the force on i from j.
 - **E-9** Exact finite-P reference (derived from Z_P = (P/β)^P / Π_k Ω_k per Cartesian component, Ω_k² = ω_k² + ω², and verified numerically against −∂ ln Z_P/∂β and Monte Carlo): for N atoms in `Harmonic` with frequency ω, ⟨E_prim⟩ = ⟨E_vir⟩ = (3N/β) Σ_{k=0}^{P−1} ω²/(ω_k² + ω²), independent of mass. P = 1 gives 3N/β; P → ∞ gives 3N·(ω/2)·coth(βω/2). Statistical tests must use this finite-P value, not the P → ∞ limit.
 
@@ -99,7 +99,7 @@ All return totals over atoms and Cartesian components, in Eh. The energy estimat
 
 - **N-1** `NeighborList` is a Verlet list of full pairs: `neighbors(i)` lists every j ≠ i with r_ij < `cutoff + skin` (strict; minimum image if a cell is given), sorted ascending.
 - **N-2** A rebuild is required when any atom has moved more than `skin/2` since the last build (displacements in unwrapped coordinates), or when the atom count differs from the last build (Q10).
-- **N-3** `LennardJones` keeps one neighbor list per bead.
+- **N-3** `LennardJones` keeps one neighbor list per bead, and rebuilds them when the cell passed to `evaluate` differs from the one they were built with, including `None` ↔ `Some` (Q11).
 
 ## 11. Roadmap
 

@@ -82,6 +82,7 @@ Allowed new dependency: `rayon` in `pimd-potentials` (and `pimd-core` if the imp
 - **Cutoff handling:** pairs with r ≥ r_c contribute nothing. With `shift`, V(r) − V(r_c) inside r_c; forces never shifted.
 - **P > 1:** energies per bead, forces per bead; `virial` is `None`.
 - **Owner decisions Q7, Q9, Q10** (tested in the `tests(m3)` addendum): C-4 violated inside `LennardJones::evaluate` → `PotentialError::InvalidParameter` (its doc widened to "a parameter, or a parameter combined with the cell"); C-5 applies plain differences to ring-polymer estimators only, the RDF uses the minimum image; a pair at exactly `cutoff + skin` is not listed; `needs_rebuild` is `true` when the atom count differs from the last build; `kinetic_classical` panics for P ≠ 1; `Rdf::new` with `n_atoms < 2` → `InvalidValue`; `Rdf::g` before any sample → all zeros.
+- **After review (Q11, Q12):** `LennardJones` rebuilds its lists when the cell differs from the last build's (`None` ↔ `Some` or different lengths); RDF bins cover [0, r_max) with rounding clamped into the last bin; `Rdf::accumulate` with P = 0 is `ShapeMismatch`.
 - **Virial and `VelocityVerlet::step` (Q8):** the signature stays as briefed; samplers that need the pressure call `evaluate` once more. Revisited in M4.
 - **Neighbor list rebuild inside `evaluate`:** `LennardJones::evaluate` calls `needs_rebuild` per bead and rebuilds when true or when the atom count changed. Positions passed are unwrapped (C-5).
 

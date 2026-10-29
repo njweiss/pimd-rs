@@ -646,3 +646,38 @@ fn repeated_evaluation_is_identical() {
         assert_eq!(a.forces, e.forces);
     }
 }
+
+/// N-3 (Q11): the lists are rebuilt when the cell changes, even if no atom moves. Atoms at
+/// x = 0.5 and 9.5 (plain distance 9, beyond r_c = 5) and a third at (0.5, 4, 1) (3 from atom 0).
+/// With L = 12 the first pair is 3 apart through the minimum image (9 − 12 = −3); with L = 20 or
+/// open boundaries it is 9 apart. One object evaluates the same positions with the cell sequence
+/// None, 20, 12, 20, None (P = 1 and P = 2); each result is bitwise equal to that of a fresh
+/// object given the same cell (energies, forces, virial). The L = 12 energy differs from the open
+/// one, so a stale list is visible; 20 → 12 (shrinking box) catches a check on `None` ↔ `Some`
+/// only.
+#[test]
+fn cell_change_rebuilds() {
+    let x = vec![[0.5, 1.0, 1.0], [9.5, 1.0, 1.0], [0.5, 4.0, 1.0]];
+    let c12 = Cell::new([12.0; 3]).unwrap();
+    let c20 = Cell::new([20.0; 3]).unwrap();
+    for q in [beads1(&x), beads(&[x.clone(), x.clone()])] {
+        let p = q.n_beads();
+        let mut pot = lj(false);
+        let seq = [None, Some(&c20), Some(&c12), Some(&c20), None];
+        for (k, cell) in seq.into_iter().enumerate() {
+            let got = pot.evaluate(&q, cell, None).unwrap();
+            let want = lj(false).evaluate(&q, cell, None).unwrap();
+            let what = format!("P = {p}, call {k}, cell {cell:?}");
+            for (a, b) in got.energies.iter().zip(&want.energies) {
+                assert_eq!(a.to_bits(), b.to_bits(), "{what}: energy {a} vs {b}");
+            }
+            for (a, b) in got.forces.as_slice().iter().zip(want.forces.as_slice()) {
+                assert_eq!(a.to_bits(), b.to_bits(), "{what}: force {a} vs {b}");
+            }
+            assert_eq!(got.virial, want.virial, "{what}: virial");
+        }
+        let open = lj(false).evaluate(&q, None, None).unwrap().energies[0];
+        let periodic = lj(false).evaluate(&q, Some(&c12), None).unwrap().energies[0];
+        assert!((open - periodic).abs() > 1e-6, "{open} vs {periodic}");
+    }
+}

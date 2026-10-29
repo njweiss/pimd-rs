@@ -12,7 +12,7 @@ Proposed resolution:
 Owner decision:
 ```
 
-Number new entries from Q11. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
+Number new entries from Q13. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
 brief, it moves to the index below; the full text stays in git history.
 
 ## Resolved (index)
@@ -31,3 +31,5 @@ Code and tests cite these numbers. Each decision now lives where the last column
 | Q8 | `VelocityVerlet::step` keeps its M3 signature; M4's run driver keeps the last `Evaluation` | MILESTONE_3, MILESTONE_4 |
 | Q9 | Plain differences for ring-polymer estimators only; the RDF uses the minimum image | SPEC C-5 |
 | Q10 | Strict `<` at cutoff + skin; `needs_rebuild` true on atom-count change; `kinetic_classical` panics for P ≠ 1; `Rdf::new` needs N ≥ 2; `g` before samples is zeros | SPEC N-1, N-2, E-7; MILESTONE_3 |
+| Q11 | `LennardJones` rebuilds its lists when the cell changes (incl. `None` ↔ `Some`); found in M3 review | SPEC N-3; MILESTONE_3 |
+| Q12 | RDF bins are [0, r_max), rounding past the last bin is clamped into it; P = 0 → `ShapeMismatch` | SPEC E-7; MILESTONE_3 |
