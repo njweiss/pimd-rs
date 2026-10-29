@@ -19,6 +19,7 @@ M1–M3 merged. i-PI available via `pixi run -e ref` (version recorded in `pixi.
 | E-1 … E-4, E-7 | Observables recorded during a run |
 | U-3 | Unit conversion only at config/output boundary |
 | (new) | Config parsing, run driver, observables output, checkpointing |
+| RP-4 | Optional FFT normal-mode transform behind `sampling.normal_modes` |
 
 ## Public API (stubs)
 
@@ -92,7 +93,8 @@ checkpoint_every = 1000
 - **Outputs:** `observables.csv` (step, E_prim, E_vir, V, T-estimate columns), `rdf.csv`, `checkpoint.bin`, `run.log` (seed, versions, config echo).
 
 - **`Cell::min_length()` (owner-approved after M3):** new public method returning the shortest cell edge (bohr); replaces the three copies of the L_min fold in `NeighborList::build`, `Rdf::new` and `LennardJones::evaluate`. Bit-identical.
-- **Last evaluation (Q8):** the run driver keeps the `Evaluation` of the latest step (energies and, at P = 1, the virial) so observables never need an extra `evaluate`. Whether `VelocityVerlet::step` returns it or a driver holds it is decided when this brief is finalised.
+- **Last evaluation (Q8, decided after M3):** no change in M4. No M4 observable needs the virial (pressure is not recorded, and P-5 gives no virial at P > 1). `VelocityVerlet::step` keeps its signature. When pressure becomes an observable, `RingPolymerSim` keeps the last virial alongside its forces and energies (one field and an accessor) rather than `step` returning an `Evaluation`.
+- **Normal-mode transform option (decided after M3):** config key `sampling.normal_modes = "matrix" | "fft"`, default `"matrix"` (the current RP-4 transform). D-3 is unchanged; bitwise guarantees hold per transform setting and per machine (see the D-3 note in SPEC). The setting is part of the config hash, so a checkpoint restarts only under the same setting. Before adding an FFT dependency (`rustfft` needs owner approval, hard rule 4), profile the matrix path at P ∈ {4, 16, 32}; if the cost is allocation or layout rather than O(P²), fix that first and report the numbers. If an FFT library is used, it must not change behaviour with the thread count, and the brief author decides with the owner whether to pin a scalar (CPU-independent) planner.
 
 ## Required tests
 
@@ -101,6 +103,7 @@ Cargo tests (fast; small systems and short runs):
 - **RNG snapshot:** `restore(snapshot())` continues the same sequence; `to_bytes`/`from_bytes` round trip; corrupt bytes rejected.
 - **Restart (D-3):** 2K steps vs K + checkpoint + K steps for a small system (N = 32, P = 4): bitwise-identical final state, observables file contents and RDF; also with a 1-thread and a 4-thread pool.
 - **Reproducibility:** same config, two runs, identical outputs (bytes); different seed differs.
+- **Normal-mode transform:** `fft` and `matrix` agree to 1e-13 relative (forward and inverse, P ∈ {1, 2, 3, 4, 8, 16, 32}, including odd P and the RP-4 column order) and give the same thermostat draws; each setting alone is bitwise identical across 1 and 4 threads; changing the setting changes the config hash.
 - **P = 1 limit:** with `n_beads = 1`, observables agree with a classical NVT run assembled from M3 components (VelocityVerlet + PILE-L on one bead, same seed) to 1e-12 relative per recorded value.
 - **Smoke:** a 50-step run executes and writes all output files.
 
