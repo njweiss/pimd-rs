@@ -25,8 +25,9 @@ pub struct LjParams {
 /// V(r) = 4ε[(σ/r)¹² − (σ/r)⁶] for r < r_c, optionally shifted, no tail correction (P-3).
 ///
 /// Keeps one `NeighborList` per bead (N-3), rebuilt inside `evaluate` when `needs_rebuild` is true,
-/// the atom count changed, or the cell differs from the one of the last build (Q11). Positions passed are unwrapped (C-5); the minimum image is applied
-/// internally when a cell is given. Accepts any number of atoms.
+/// the atom count changed, or the cell differs from the one of the last build (Q11). Positions
+/// passed are unwrapped (C-5); the minimum image is applied internally when a cell is given.
+/// Accepts any number of atoms.
 #[derive(Debug, Clone)]
 pub struct LennardJones {
     params: LjParams,
@@ -66,7 +67,7 @@ impl LennardJones {
 
     /// Atom `i`'s share of one bead: (½ Σ_j V(r_ij), Σ_j f_ij, ½ Σ_j r_ij ⊗ f_ij) over its full
     /// neighbor list in ascending j (D-3), with r_ij = r_i − r_j (minimum image when `cell` is
-    /// given) and only pairs with r_ij < r_c (P-3).
+    /// given) and only pairs with r_ij < r_c (P-3). The virial term stays zero unless `virial`.
     fn atom_terms(
         &self,
         i: usize,
@@ -74,6 +75,7 @@ impl LennardJones {
         neighbors: &[usize],
         cell: Option<&Cell>,
         v_shift: f64,
+        virial: bool,
     ) -> (f64, [f64; 3], [[f64; 3]; 3]) {
         let LjParams {
             epsilon,
@@ -99,9 +101,12 @@ impl LennardJones {
             // F(r)/r with F = −dV/dr.
             let f_over_r = 24.0 * epsilon * (2.0 * s6 * s6 - s6) / r2;
             for a in 0..3 {
-                f[a] += f_over_r * d[a];
-                for b in 0..3 {
-                    w[a][b] += f_over_r * d[a] * d[b];
+                let fa = f_over_r * d[a];
+                f[a] += fa;
+                if virial {
+                    for b in 0..3 {
+                        w[a][b] += fa * d[b];
+                    }
                 }
             }
         }
@@ -166,31 +171,31 @@ impl Potential for LennardJones {
         let mut forces = Beads::zeros(p, n);
         let mut virial = [[0.0; 3]; 3];
         for j in 0..p {
-            let x: Vec<[f64; 3]> = (0..n).map(|i| positions.get(j, i)).collect();
-            if fresh || self.lists[j].needs_rebuild(&x) {
+            let x = positions.as_slice()[3 * n * j..3 * n * (j + 1)]
+                .as_chunks::<3>()
+                .0;
+            if fresh || self.lists[j].needs_rebuild(x) {
                 // C-4 was checked above, so the build cannot fail.
                 self.lists[j]
-                    .build(&x, cell)
+                    .build(x, cell)
                     .map_err(|_| PotentialError::InvalidParameter {
                         what: "cutoff + skin (bohr), must be <= L_min/2",
                         value: cutoff + skin,
                     })?;
             }
             let list = &self.lists[j];
-            // Per-atom terms in parallel, collected in index order, then reduced sequentially (D-3).
+            // Per-atom terms in parallel, collected in index order, reduced sequentially (D-3).
             let terms: Vec<_> = (0..n)
                 .into_par_iter()
-                .map(|i| self.atom_terms(i, &x, list.neighbors(i), cell, v_shift))
+                .map(|i| self.atom_terms(i, x, list.neighbors(i), cell, v_shift, p == 1))
                 .collect();
             let mut e = 0.0;
             for (i, (ei, fi, wi)) in terms.iter().enumerate() {
                 e += ei;
                 forces.set(j, i, *fi);
-                if p == 1 {
-                    for a in 0..3 {
-                        for b in 0..3 {
-                            virial[a][b] += wi[a][b];
-                        }
+                for a in 0..3 {
+                    for b in 0..3 {
+                        virial[a][b] += wi[a][b];
                     }
                 }
             }

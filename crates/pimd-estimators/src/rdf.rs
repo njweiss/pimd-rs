@@ -6,7 +6,8 @@ use crate::error::EstimatorError;
 
 /// Histogram of minimum-image pair distances (i < j, every bead) on `n_bins` equal bins on the
 /// half-open interval [0, r_max) (bohr), accumulated over samples (E-7). Pairs with r ≥ r_max are
-/// not counted; a distance below r_max whose bin index rounds to `n_bins` goes into the last bin. Requires a cell and r_max ≤ L_min/2.
+/// not counted; a distance below r_max whose bin index rounds to `n_bins` goes into the last bin.
+/// Requires a cell and r_max ≤ L_min/2.
 #[derive(Debug, Clone)]
 pub struct Rdf {
     n_bins: usize,
