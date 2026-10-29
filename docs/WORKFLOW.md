@@ -16,7 +16,7 @@ How milestones are built. Three separate Claude Code sessions per engine milesto
 
 Done by the owner with Claude, before M1. Creates:
 - Cargo workspace (`crates/pimd-core`, `pimd-potentials`, `pimd-integrators`, `pimd-estimators`; `pimd-cli` arrives in M4), `rust-toolchain.toml` (pinned stable), `Cargo.lock` committed, MIT `LICENSE`, `.gitignore`.
-- `pixi.toml` with environments `ref` (LAMMPS, i-PI, OpenMM, tblite, ASE, numpy, scipy) and `ml` (PyTorch CUDA, MACE, ASE), and tasks `lmp` (LAMMPS), `ipi` (i-PI, with its LJ driver) and `test-validation` (= `CHECK_LONG=1 scripts/check.sh`).
+- `pixi.toml` with environments `ref` (LAMMPS, i-PI, OpenMM, tblite, ASE, numpy, scipy) and `ml` (PyTorch CUDA, MACE, ASE), and tasks `lmp` (LAMMPS), `ipi` (i-PI; its Lennard-Jones client is LAMMPS `fix ipi` with `pair_style lj/cut`, started through `lmp`, because the conda-forge i-PI ships no LJ driver) and `test-validation` (= `CHECK_LONG=1 scripts/check.sh`).
 - `scripts/check.sh` (provided), `docs/*` (provided), CI stub running `scripts/check.sh`.
 - Whatever each brief lists under "Already done" (types, error enums, constants).
 - First commit on `main`. Milestone branches are `milestone-N`.
@@ -37,7 +37,7 @@ Done by the owner with Claude, before M1. Creates:
 
 ### Long validation
 
-Long statistical runs are ordinary integration tests gated by the Cargo feature `long-validation` (declared in every crate that has them), never `#[ignore]`. `scripts/check.sh` skips them by default; `CHECK_LONG=1 ./scripts/check.sh` (or `pixi run test-validation`) runs them in release mode together with `validation/verify_reference_data.py`, which regenerates reference data into a temporary directory and compares it with the committed JSON.
+Long statistical runs are ordinary integration tests gated by the Cargo feature `long-validation` (declared in every crate that has them), never `#[ignore]`. `scripts/check.sh` skips them by default; `CHECK_LONG=1 ./scripts/check.sh` (or `pixi run test-validation`) runs them in release mode together with `validation/verify_reference_data.py`, which regenerates reference data into a temporary directory and compares it with the committed JSON. It runs every `crates/*/tests/data/gen_*.py --out <tmpdir>` (generators must accept `--out`); keys and list lengths must match, numbers within rtol 1e-9 / atol 1e-12, other values exactly; the top-level `versions` block is reported, not compared.
 
 ### Mandatory physics-bug mutants
 
