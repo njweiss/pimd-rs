@@ -38,9 +38,9 @@ pub struct RingPolymerIntegrator {
     /// Inverse temperature, Eh⁻¹.
     beta: f64,
     modes: NormalModes,
-    thermostat: Thermostat,
-    /// c_k = exp(−γ_k dt) per mode, aligned with the `modes` columns (T-1, T-2).
-    c_k: Vec<f64>,
+    /// c_k = exp(−γ_k dt) per mode, aligned with the `modes` columns (T-1, T-2);
+    /// `None` for `Thermostat::Off`, whose O step is the identity and draws nothing (T-3).
+    c_k: Option<Vec<f64>>,
 }
 
 /// Returns `v` if it is positive and finite, else `IntegratorError::InvalidValue` named `what`.
@@ -66,27 +66,29 @@ impl RingPolymerIntegrator {
         positive_finite("dt (hbar/Eh)", dt)?;
         positive_finite("beta (1/Eh)", beta)?;
         let gamma0 = match thermostat {
+            Thermostat::Off => None,
+            Thermostat::PileL { tau0: None } => Some(0.0),
             Thermostat::PileL { tau0: Some(tau0) } => {
-                1.0 / positive_finite("tau0 (hbar/Eh)", tau0)?
+                Some(1.0 / positive_finite("tau0 (hbar/Eh)", tau0)?)
             }
-            _ => 0.0,
         };
         let modes = NormalModes::new(n_beads, beta)?;
         // T-2: γ_0 = 1/τ_0 (or 0), γ_k = 2 ω_k for ω_k > 0; T-1: c_k = exp(−γ_k dt).
-        let c_k = modes
-            .frequencies()
-            .iter()
-            .enumerate()
-            .map(|(k, &w)| {
-                let gamma = if k == 0 { gamma0 } else { 2.0 * w };
-                (-gamma * dt).exp()
-            })
-            .collect();
+        let c_k = gamma0.map(|gamma0| {
+            modes
+                .frequencies()
+                .iter()
+                .enumerate()
+                .map(|(k, &w)| {
+                    let gamma = if k == 0 { gamma0 } else { 2.0 * w };
+                    (-gamma * dt).exp()
+                })
+                .collect()
+        });
         Ok(RingPolymerIntegrator {
             dt,
             beta,
             modes,
-            thermostat,
             c_k,
         })
     }
@@ -117,7 +119,7 @@ impl RingPolymerIntegrator {
     /// Panics if the bead count of `state` differs from P or `state.masses.len()` from N.
     pub fn thermostat_step(&self, state: &mut RingState, rng: &mut Rng) {
         self.assert_shape(state);
-        if self.thermostat == Thermostat::Off {
+        if self.c_k.is_none() {
             return;
         }
         let mut pt = self.modes.to_normal(&state.p);
@@ -130,21 +132,21 @@ impl RingPolymerIntegrator {
         &self.modes
     }
 
+    /// `IntegratorError::ShapeMismatch` unless q, p and masses agree with each other and with P.
+    fn check_shape(&self, state: &RingState) -> Result<(), IntegratorError> {
+        let (p, n) = (state.q.n_beads(), state.q.n_atoms());
+        check_sizes(&[
+            ("bead count of q vs integrator", self.modes.n_beads(), p),
+            ("bead count of p", p, state.p.n_beads()),
+            ("atom count of p", n, state.p.n_atoms()),
+            ("number of masses", n, state.masses.len()),
+        ])
+    }
+
     fn assert_shape(&self, state: &RingState) {
-        let p = self.modes.n_beads();
-        assert!(
-            state.q.n_beads() == p && state.p.n_beads() == p,
-            "integrator built for P = {p} beads, state has {} (q) and {} (p)",
-            state.q.n_beads(),
-            state.p.n_beads()
-        );
-        let n = state.q.n_atoms();
-        assert!(
-            state.p.n_atoms() == n && state.masses.len() == n,
-            "state has {n} atoms in q, {} in p, {} masses",
-            state.p.n_atoms(),
-            state.masses.len()
-        );
+        if let Err(e) = self.check_shape(state) {
+            panic!("{e}");
+        }
     }
 
     /// I-2 in normal-mode coordinates `qt`, `pt` (`[P, N, 3]`, mode-major) for time `t`.
@@ -177,13 +179,13 @@ impl RingPolymerIntegrator {
 
     /// T-1 on normal-mode momenta `pt`; draws k outermost, then atom i, then d. No-op for `Off`.
     fn thermostat_modes(&self, pt: &mut Beads, masses: &[f64], rng: &mut Rng) {
-        if self.thermostat == Thermostat::Off {
+        let Some(c_k) = &self.c_k else {
             return;
-        }
+        };
         let pf = self.modes.n_beads() as f64;
         let n3 = masses.len() * 3;
         let ps = pt.as_mut_slice();
-        for (k, &c) in self.c_k.iter().enumerate() {
+        for (k, &c) in c_k.iter().enumerate() {
             for (p, &m) in ps[k * n3..(k + 1) * n3].chunks_exact_mut(3).zip(masses) {
                 let amp = ((1.0 - c * c) * m * pf / self.beta).sqrt();
                 for x in p {
@@ -197,11 +199,16 @@ impl RingPolymerIntegrator {
 /// `IntegratorError::ShapeMismatch` unless `ev` has forces of shape `[p, n, 3]` and `p`
 /// energies (P-1).
 fn check_evaluation(ev: &Evaluation, p: usize, n: usize) -> Result<(), IntegratorError> {
-    for (what, expected, actual) in [
+    check_sizes(&[
         ("bead count of evaluated forces", p, ev.forces.n_beads()),
         ("atom count of evaluated forces", n, ev.forces.n_atoms()),
         ("number of evaluated energies", p, ev.energies.len()),
-    ] {
+    ])
+}
+
+/// The first `(what, expected, actual)` with `expected != actual`, as `ShapeMismatch`.
+fn check_sizes(checks: &[(&'static str, usize, usize)]) -> Result<(), IntegratorError> {
+    for &(what, expected, actual) in checks {
         if expected != actual {
             return Err(IntegratorError::ShapeMismatch {
                 what,
@@ -243,25 +250,8 @@ impl RingPolymerSim {
         integrator: RingPolymerIntegrator,
         mut potential: Box<dyn Potential>,
     ) -> Result<Self, IntegratorError> {
+        integrator.check_shape(&state)?;
         let (p, n) = (state.q.n_beads(), state.q.n_atoms());
-        for (what, expected, actual) in [
-            (
-                "bead count of q vs integrator",
-                integrator.modes.n_beads(),
-                p,
-            ),
-            ("bead count of p", p, state.p.n_beads()),
-            ("atom count of p", n, state.p.n_atoms()),
-            ("number of masses", n, state.masses.len()),
-        ] {
-            if expected != actual {
-                return Err(IntegratorError::ShapeMismatch {
-                    what,
-                    expected,
-                    actual,
-                });
-            }
-        }
         for &m in &state.masses {
             positive_finite("mass (m_e)", m)?;
         }
