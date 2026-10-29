@@ -75,7 +75,7 @@ Non-goals: training MLIPs, a general-purpose MD package, electrostatics (Ewald/P
 
 ## 8. Estimators
 
-All return totals over atoms and Cartesian components, in Eh. Estimators return plain `f64` and panic if their input shapes disagree (a programming error); there is no estimator error type.
+All return totals over atoms and Cartesian components, in Eh. The energy estimators (E-1 … E-5, H_P) return plain `f64` and panic if their input shapes disagree (a programming error). Estimators with real input validation (E-7 RDF, E-8 pressure) return `Result<_, EstimatorError>`.
 
 - **E-1** Primitive kinetic: K_prim = 3NP/(2β) − E_spring/P, with E_spring from E-5. (The 1/P is required because ω_P = P/β and the ring is sampled at β/P; it is the β-derivative of ln Z_P.)
 - **E-2** Virial kinetic: K_vir = 3N/(2β) − (1/(2P)) Σ_j Σ_i (q_{j,i} − q̄_i)·F_{j,i}, with q̄ the centroid and F from S-3.

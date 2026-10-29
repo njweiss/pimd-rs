@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 pimd-core.workspace = true
 pimd-integrators.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 pimd-potentials.workspace = true

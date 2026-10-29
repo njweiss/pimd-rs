@@ -85,6 +85,7 @@ dependencies = [
  "pimd-core",
  "pimd-integrators",
  "pimd-potentials",
+ "thiserror",
 ]
 
 [[package]]
