@@ -1,10 +1,11 @@
-//! Core types for pimd-rs: units, cell, bead storage, RNG and normal modes.
+//! Core types for pimd-rs: units, cell, bead storage, RNG, normal modes and neighbor lists.
 //!
 //! All quantities are Hartree atomic units (SPEC U-1).
 
 pub mod beads;
 pub mod cell;
 pub mod error;
+pub mod neighbor;
 pub mod normal_modes;
 pub mod rng;
 pub mod units;
@@ -12,5 +13,6 @@ pub mod units;
 pub use beads::Beads;
 pub use cell::Cell;
 pub use error::CoreError;
+pub use neighbor::NeighborList;
 pub use normal_modes::NormalModes;
 pub use rng::Rng;
