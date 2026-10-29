@@ -8,7 +8,7 @@ A classical Lennard-Jones MD core that matches LAMMPS on identical input, is bit
 
 ## Already done
 
-M1 and M2 merged. Reference tooling (`pixi run -e ref lmp`) works.
+M1 and M2 merged. Reference tooling (`pixi run -e ref lmp`) works. `EstimatorError` (`InvalidValue`, `ShapeMismatch`) exists again (Phase 0 addendum; Q4 covered only the `f64` energy estimators).
 
 ## In scope
 
