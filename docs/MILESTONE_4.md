@@ -102,7 +102,7 @@ Cargo tests (fast; small systems and short runs):
 - **Smoke:** a 50-step run executes and writes all output files.
 
 Long validation (`validation/`, run with `CHECK_LONG=1 ./scripts/check.sh` via the cargo feature `long-validation`; no `#[ignore]`):
-- **vs i-PI:** the same LJ neon system (same ε, σ, cutoff and shift policy, same β, P, N, box), i-PI with its built-in LJ driver, PILE-L with matching thermostat settings. Compare ⟨E_vir⟩, ⟨E_prim⟩ and g(r) within 5σ_combined (block averaging on both sides). The i-PI input and output files and a generator script are stored under `validation/data/` with the i-PI version; reference observables are stored as JSON with error bars. Any systematic disagreement goes to `QUESTIONS.md`.
+- **vs i-PI:** the same LJ neon system (same ε, σ, cutoff and shift policy, same β, P, N, box), i-PI with LAMMPS `fix ipi` (`pair_style lj/cut`) as the LJ client (WORKFLOW Phase 0), PILE-L with matching thermostat settings. Compare ⟨E_vir⟩, ⟨E_prim⟩ and g(r) within 5σ_combined (block averaging on both sides). The i-PI input and output files and a generator script are stored under `validation/data/` with the i-PI version; reference observables are stored as JSON with error bars. Any systematic disagreement goes to `QUESTIONS.md`.
 - **Quantum vs. classical:** P = 1 vs P = 16 at a low temperature where the effect is visible: g(r) first-peak height and ⟨E⟩ shifts have the expected sign (quantum delocalisation lowers the peak and raises the energy at fixed T); quote the numbers with error bars.
 - **Convergence in P:** P ∈ {4, 8, 16, 32}: ⟨E_vir⟩ approaches a limit with O(1/P²) differences; the virial estimator's block-averaged error is smaller than the primitive's at P ≥ 8.
 

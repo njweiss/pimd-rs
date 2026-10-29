@@ -48,7 +48,7 @@ Non-goals: training MLIPs, a general-purpose MD package, electrostatics (Ewald/P
   - k = 0: centroid, C_{j0} = 1/√P, ω_0 = 0.
   - for m = 1..⌊(P−1)/2⌋: k = 2m−1 has C_{jk} = √(2/P)·cos(2π m j/P) and k = 2m has C_{jk} = √(2/P)·sin(2π m j/P); both have ω_k = 2 ω_P sin(mπ/P).
   - if P is even: the last column k = P−1 has C_{jk} = (−1)^j/√P and ω_k = 2 ω_P.
-  `frequencies()` is aligned with the columns. Note q̃_0 = √P·q̄ (q̄ the centroid).
+  `frequencies()` is aligned with the columns. Note q̃_0 = √P·q̄ (q̄ the centroid). `to_normal`/`to_beads` panic if the input's bead count differs from P (a programming error, not a recoverable condition).
 - **RP-5** Cᵀ·S·C = diag(ω_k²), where S = ω_P²·Σ_j (e_j − e_{j+1})(e_j − e_{j+1})ᵀ is the spring matrix, so that Σ_j ½ m ω_P² (q_j − q_{j+1})² = Σ_k ½ m ω_k² q̃_k².
 - **RP-6** For P = 1 the ring polymer is a classical particle: ω_0 = 0, no springs, and every ring-polymer rule reduces to its classical counterpart.
 
@@ -75,7 +75,7 @@ Non-goals: training MLIPs, a general-purpose MD package, electrostatics (Ewald/P
 
 ## 8. Estimators
 
-All return totals over atoms and Cartesian components, in Eh.
+All return totals over atoms and Cartesian components, in Eh. Estimators return plain `f64` and panic if their input shapes disagree (a programming error); there is no estimator error type.
 
 - **E-1** Primitive kinetic: K_prim = 3NP/(2β) − E_spring/P, with E_spring from E-5. (The 1/P is required because ω_P = P/β and the ring is sampled at β/P; it is the β-derivative of ln Z_P.)
 - **E-2** Virial kinetic: K_vir = 3N/(2β) − (1/(2P)) Σ_j Σ_i (q_{j,i} − q̄_i)·F_{j,i}, with q̄ the centroid and F from S-3.

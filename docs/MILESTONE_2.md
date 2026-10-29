@@ -103,6 +103,6 @@ LJ, neighbor lists, cells in integrators beyond passing them through, RDF, press
 
 ## Acceptance
 
-- [ ] All tests pass; `check.sh` exits 0
-- [ ] E-9 reproduced for P = 1, 4, 16
-- [ ] Review done (mandatory for this milestone); no blocking findings
+- [x] All tests pass; `check.sh` exits 0
+- [x] E-9 reproduced for P = 1, 4, 16
+- [x] Review done (mandatory for this milestone); no blocking findings
