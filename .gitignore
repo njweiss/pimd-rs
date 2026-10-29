@@ -11,3 +11,6 @@
 *.pt
 *.pth
 *.model
+
+# Python bytecode
+__pycache__/
