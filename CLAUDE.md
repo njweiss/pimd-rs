@@ -51,7 +51,7 @@ pixi run test-validation        # same as CHECK_LONG=1 ./scripts/check.sh
 | Phase 0 bootstrap | done |
 | M1 Foundations | merged |
 | M2 Ring-polymer sampling | merged |
-| M3 Classical core | not started |
+| M3 Classical core | merged |
 | M4 Quantum liquid, then release gate R1 | not started |
 | M5–M8 | not briefed yet (see SPEC §11) |
 
