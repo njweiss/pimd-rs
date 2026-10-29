@@ -2,6 +2,7 @@
 
 use pimd_core::{Beads, Cell};
 
+use crate::energy::assert_masses;
 use crate::error::EstimatorError;
 
 /// K = Σ_i |p_i|²/(2 m_i), Eh, for momenta `p` (`[1, N, 3]`, atomic units) and `masses` (m_e).
@@ -10,7 +11,7 @@ use crate::error::EstimatorError;
 /// other energy estimators, Q4, Q10).
 pub fn kinetic_classical(masses: &[f64], p: &Beads) -> f64 {
     assert_eq!(p.n_beads(), 1, "kinetic_classical needs P = 1");
-    assert_eq!(masses.len(), p.n_atoms(), "number of masses vs atoms");
+    assert_masses(p, masses);
     masses
         .iter()
         .enumerate()

@@ -4,8 +4,8 @@ use crate::cell::Cell;
 use crate::error::{CoreError, positive_finite};
 
 /// Verlet list of full pairs (N-1): `neighbors(i)` holds every j ≠ i with r_ij < `cutoff + skin`
-/// (strict; minimum image when built with a cell), sorted ascending. Remembers the positions it was built
-/// from for the rebuild criterion (N-2).
+/// (strict; minimum image when built with a cell), sorted ascending. Remembers the positions it was
+/// built from for the rebuild criterion (N-2).
 ///
 /// Lengths in bohr. Positions are `[N]` 3-vectors in bohr, unwrapped (C-5).
 #[derive(Debug, Clone)]

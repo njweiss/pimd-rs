@@ -92,7 +92,7 @@ pub fn hamiltonian(state: &RingState, beta: f64, energies: &[f64]) -> f64 {
     kinetic + spring + energies.iter().sum::<f64>()
 }
 
-fn assert_masses(q: &Beads, masses: &[f64]) {
+pub(crate) fn assert_masses(q: &Beads, masses: &[f64]) {
     assert_eq!(
         masses.len(),
         q.n_atoms(),

@@ -28,7 +28,8 @@ impl VelocityVerlet {
     /// not checked here.
     ///
     /// Errors: `IntegratorError::ShapeMismatch` if the state has P ≠ 1, or `state.p`, `forces`,
-    /// `state.masses` disagree with `state.q`; `IntegratorError::Potential` if the evaluation fails.
+    /// `state.masses` disagree with `state.q`; `IntegratorError::Potential` if the evaluation
+    /// fails.
     pub fn step(
         &self,
         state: &mut RingState,
