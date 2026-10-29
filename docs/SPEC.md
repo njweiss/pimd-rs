@@ -19,7 +19,7 @@ Non-goals: training MLIPs, a general-purpose MD package, electrostatics (Ewald/P
 
 - **D-1** f64 everywhere in the core. Casting to f32 happens only inside model adapters.
 - **D-2** All randomness comes from `pimd_core::Rng`: ChaCha8 (`rand_chacha`) seeded from a `u64`; standard normals from `rand_distr::StandardNormal`. Draw order is part of the contract (see T-1); it is reproducible for fixed dependency versions (pinned by `Cargo.lock`).
-- **D-3** For a fixed seed and config, results are bitwise identical across runs and across thread counts. Parallel code computes per-atom (or fixed-size-chunk) partial results and combines them in a fixed order. Forbidden: float reductions whose order depends on scheduling, `HashMap`/`HashSet` iteration that can affect numbers, wall-clock or address-dependent behaviour.
+- **D-3** For a fixed seed and config, results are bitwise identical across runs and across thread counts. Parallel code computes per-atom (or fixed-size-chunk) partial results and combines them in a fixed order. Forbidden: float reductions whose order depends on scheduling, `HashMap`/`HashSet` iteration that can affect numbers, wall-clock or address-dependent behaviour. The guarantee is per configuration and per machine: alternative algorithms selected by configuration (e.g. the FFT normal-mode transform, M4) are bitwise reproducible within that setting but agree with each other only to a stated tolerance, and bitwise equality across different CPUs is not promised.
 - **D-4** Every stochastic step documents its draw order.
 
 ## 3. Data layout and sign conventions
