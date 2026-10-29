@@ -24,8 +24,8 @@ pub struct LjParams {
 
 /// V(r) = 4ε[(σ/r)¹² − (σ/r)⁶] for r < r_c, optionally shifted, no tail correction (P-3).
 ///
-/// Keeps one `NeighborList` per bead (N-3), rebuilt inside `evaluate` when `needs_rebuild` is true
-/// or the atom count changed. Positions passed are unwrapped (C-5); the minimum image is applied
+/// Keeps one `NeighborList` per bead (N-3), rebuilt inside `evaluate` when `needs_rebuild` is true,
+/// the atom count changed, or the cell differs from the one of the last build (Q11). Positions passed are unwrapped (C-5); the minimum image is applied
 /// internally when a cell is given. Accepts any number of atoms.
 #[derive(Debug, Clone)]
 pub struct LennardJones {
@@ -33,6 +33,8 @@ pub struct LennardJones {
     lists: Vec<NeighborList>,
     /// Empty list with this cutoff and skin, cloned when the bead count changes.
     template: NeighborList,
+    /// Cell passed to the last build of `lists` (N-3, Q11).
+    built_cell: Option<Cell>,
 }
 
 impl LennardJones {
@@ -58,6 +60,7 @@ impl LennardJones {
             params,
             lists: Vec::new(),
             template,
+            built_cell: None,
         })
     }
 
@@ -115,7 +118,9 @@ impl Potential for LennardJones {
     /// Per-bead energies (Eh) and forces (Eh/bohr) for `positions` `[P, N, 3]` (bohr, unwrapped).
     /// `virial` is `Some(W)` (Eh, W = Σ_{i<j} r_ij ⊗ f_ij, E-8) for P = 1 and `None` for P > 1
     /// (P-5). Each atom's force and energy come from its own full neighbor list and per-atom values
-    /// are reduced in index order, so results do not depend on the thread count (D-3).
+    /// are reduced in index order, so results do not depend on the thread count (D-3). The per-bead
+    /// neighbor lists are rebuilt when the cell differs from the last build's, including
+    /// `None` ↔ `Some` and changed lengths (N-3, Q11).
     ///
     /// Errors: `PotentialError::Unsupported` for `subset = Some` (P-4);
     /// `PotentialError::InvalidParameter` when a cell is given and `cutoff + skin > L_min/2` (C-4,
@@ -152,9 +157,10 @@ impl Potential for LennardJones {
             0.0
         };
         let (p, n) = (positions.n_beads(), positions.n_atoms());
-        let fresh = self.lists.len() != p;
+        let fresh = self.lists.len() != p || self.built_cell != cell.copied();
         if fresh {
             self.lists = vec![self.template.clone(); p];
+            self.built_cell = cell.copied();
         }
         let mut energies = Vec::with_capacity(p);
         let mut forces = Beads::zeros(p, n);

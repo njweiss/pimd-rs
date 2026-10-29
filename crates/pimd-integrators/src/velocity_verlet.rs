@@ -24,7 +24,8 @@ impl VelocityVerlet {
     ///
     /// `forces` holds F at the current positions on entry and F at the new positions on exit.
     /// Returns the potential energy at the new positions. Requires state with exactly one bead.
-    /// Positions are never wrapped (C-5).
+    /// Positions are never wrapped (C-5). `state.masses` must be positive and finite (S-2); this is
+    /// not checked here.
     ///
     /// Errors: `IntegratorError::ShapeMismatch` if the state has P ≠ 1, or `state.p`, `forces`,
     /// `state.masses` disagree with `state.q`; `IntegratorError::Potential` if the evaluation fails.

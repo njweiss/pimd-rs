@@ -91,6 +91,8 @@ impl NeighborList {
     }
 
     /// Neighbors of atom `i`, sorted ascending, never containing `i` (N-1).
+    ///
+    /// Panics if `i >= n_atoms()`, including before the first build (when `n_atoms()` is 0).
     pub fn neighbors(&self, i: usize) -> &[usize] {
         &self.pairs[i]
     }
