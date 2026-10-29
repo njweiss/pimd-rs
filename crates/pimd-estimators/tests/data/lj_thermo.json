@@ -1,0 +1,48 @@
+{
+ "description": "LAMMPS NVE averages (total potential energy, pressure) of the 256-atom LJ liquid from the lj_snapshot.json state; lj units = engine atomic units",
+ "generator": "gen_lj_thermo.py",
+ "versions": {
+  "python": "3.12.16",
+  "numpy": "2.5.4",
+  "lammps": 20250722,
+  "lammps_conda": "2025.07.22 (cpu_py312_hdb376b3_mpi_openmpi_6)"
+ },
+ "input": "crates/pimd-potentials/tests/data/lj_snapshot.json",
+ "lammps_inputs": {
+  "pair_style": "lj/cut 2.5",
+  "pair_modify": "shift yes",
+  "neighbor": "0.3 bin",
+  "neigh_modify": "every 1 delay 0 check yes",
+  "integrator": "fix nve; timestep 0.005",
+  "sampling": "fix ave/time 10 1 10 c_thermo_pe c_thermo_press"
+ },
+ "protocol": {
+  "dt": 0.005,
+  "n_atoms": 256,
+  "n_equil": 2000,
+  "n_prod": 200000,
+  "sample_every": 10
+ },
+ "potential_energy": {
+  "mean": -1193.2938232689914,
+  "sigma": 0.10917803691867033,
+  "sigma_block": 0.10458981376046132,
+  "sigma_4block": 0.10917803691867033,
+  "n_samples": 20000,
+  "block_samples": 100
+ },
+ "pressure": {
+  "mean": 1.83271754623237,
+  "sigma": 0.002276698162931883,
+  "sigma_block": 0.002276698162931883,
+  "sigma_4block": 0.0022658157989542804,
+  "n_samples": 20000,
+  "block_samples": 100
+ },
+ "smoke": {
+  "n_steps": 400,
+  "n_samples": 40,
+  "potential_energy_mean": -1194.9882349263557,
+  "pressure_mean": 1.7780349675236156
+ }
+}

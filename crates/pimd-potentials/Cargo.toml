@@ -8,3 +8,7 @@ license.workspace = true
 [dependencies]
 pimd-core.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+# Thread-pool control for the D-3 determinism tests (MILESTONE_3).
+rayon.workspace = true
