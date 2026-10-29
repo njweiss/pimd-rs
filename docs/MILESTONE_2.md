@@ -50,8 +50,9 @@ impl RingPolymerSim {
         cell: Option<Cell>,
         integrator: RingPolymerIntegrator,
         potential: Box<dyn Potential>,
-    ) -> Result<Self, IntegratorError>;          // performs the initialising evaluate
+    ) -> Result<Self, IntegratorError>;          // performs the initialising evaluate; masses positive finite (S-2) else InvalidValue
     pub fn step(&mut self, rng: &mut Rng) -> Result<(), IntegratorError>;    // I-1, I-3
+    // new and step: an Evaluation with forces shape != [P,N,3] or energies.len() != P is ShapeMismatch (P-1)
     pub fn state(&self) -> &RingState;
     pub fn forces(&self) -> &Beads;              // -grad V at current positions
     pub fn energies(&self) -> &[f64];            // V(q_j) per bead at current positions
@@ -84,6 +85,7 @@ All hand/analytic expectations are derived in comments from SPEC rule IDs. The t
   - Draw-order test: a second `Rng` with the same seed reproduces the momenta predicted by the test's own T-1 formula, drawing in order k (outer), atom, dimension. This pins the contract.
   - Variance test: start from p = 0 with N = 4000 atoms, P = 4 (several τ₀ values), one O step. The per-mode variance of the new p̃ equals (1 − c_k²)·m·P/β within 5σ (σ of a sample variance = var·√(2/(n−1))), using c_k from T-2.
 - **NVE energy conservation (T-3):** harmonic, P = 8, Off. H_P is conserved with max deviation scaling as dt²: halving dt reduces the max |H_P(t) − H_P(0)| over a fixed duration by a factor in [3, 5].
+- **Sim boundary (S-2, P-1, C-5; added after review):** bad masses rejected by `new`; wrongly shaped `Evaluation` rejected by `new` and `step`; a `Some(cell)` reaches every `evaluate` and the ring is never wrapped.
 - **Evaluation count (I-3):** a counting `Potential` wrapper (defined in the test) sees exactly 1 call at construction and exactly 1 per step.
 - **P = 1 equals classical (RP-6):** with Off, P = 1, the trajectory matches an independent velocity-Verlet written in the test to 1e-12 relative over 200 steps (harmonic and `DoubleWell`).
 - **Estimators:** spring energy, primitive and virial kinetic, and totals against hand-computed small examples (P = 2, N = 1; hand calculations in comments); for P = 1 both kinetic estimators equal 3N/(2β) at any positions (the spring term and q − q̄ vanish).
