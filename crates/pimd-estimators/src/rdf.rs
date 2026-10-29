@@ -4,8 +4,9 @@ use pimd_core::{Beads, Cell};
 
 use crate::error::EstimatorError;
 
-/// Histogram of minimum-image pair distances (i < j, every bead) on `n_bins` equal bins on
-/// [0, r_max] (bohr), accumulated over samples (E-7). Requires a cell and r_max ≤ L_min/2.
+/// Histogram of minimum-image pair distances (i < j, every bead) on `n_bins` equal bins on the
+/// half-open interval [0, r_max) (bohr), accumulated over samples (E-7). Pairs with r ≥ r_max are
+/// not counted; a distance below r_max whose bin index rounds to `n_bins` goes into the last bin. Requires a cell and r_max ≤ L_min/2.
 #[derive(Debug, Clone)]
 pub struct Rdf {
     n_bins: usize,
@@ -17,7 +18,7 @@ pub struct Rdf {
 }
 
 impl Rdf {
-    /// Empty RDF with `n_bins` ≥ 1 bins on [0, `r_max`] (bohr, > 0, ≤ L_min/2) for `n_atoms` atoms
+    /// Empty RDF with `n_bins` ≥ 1 bins on [0, `r_max`) (bohr, > 0, ≤ L_min/2) for `n_atoms` atoms
     /// in `cell`.
     ///
     /// Errors with `EstimatorError::InvalidValue` for a bad bin count, a bad `r_max` or
@@ -60,8 +61,16 @@ impl Rdf {
     /// Adds one configuration: all beads of `q` (`[P, N, 3]`, bohr, unwrapped), pairs i < j within
     /// each bead, minimum image (C-2).
     ///
-    /// Errors with `EstimatorError::ShapeMismatch` if `q.n_atoms()` differs from `n_atoms`.
+    /// Errors with `EstimatorError::ShapeMismatch` if `q.n_atoms()` differs from `n_atoms` or `q`
+    /// has no beads (Q12); the accumulator is unchanged on error.
     pub fn accumulate(&mut self, q: &Beads) -> Result<(), EstimatorError> {
+        if q.n_beads() == 0 {
+            return Err(EstimatorError::ShapeMismatch {
+                what: "bead count of RDF positions (need P >= 1)",
+                expected: 1,
+                actual: 0,
+            });
+        }
         if q.n_atoms() != self.n_atoms {
             return Err(EstimatorError::ShapeMismatch {
                 what: "atom count of RDF positions",
@@ -82,10 +91,9 @@ impl Rdf {
                         .min_image([rb[0] - ra[0], rb[1] - ra[1], rb[2] - ra[2]]);
                     let r2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
                     if r2 < r_max2 {
-                        let bin = (r2.sqrt() * inv_dr) as usize;
-                        if bin < self.n_bins {
-                            hist[bin] += 1;
-                        }
+                        // r < r_max, so only rounding can give n_bins: clamp into the last bin.
+                        let bin = ((r2.sqrt() * inv_dr) as usize).min(self.n_bins - 1);
+                        hist[bin] += 1;
                     }
                 }
             }
