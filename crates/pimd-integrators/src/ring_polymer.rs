@@ -1,7 +1,7 @@
 //! Ring-polymer state, BAOAB integrator with PILE-L (SPEC I-1 … I-5, T-1 … T-3).
 
 use pimd_core::{Beads, Cell, NormalModes, Rng};
-use pimd_potentials::Potential;
+use pimd_potentials::{Evaluation, Potential};
 
 use crate::error::IntegratorError;
 
@@ -94,6 +94,9 @@ impl RingPolymerIntegrator {
     /// Exact free ring-polymer propagation of `state` for time `t` (ħ/Eh, any sign), per normal
     /// mode and component (I-2), using `state.masses`. No potential forces.
     ///
+    /// `state.masses` must be positive and finite (S-2); this is not checked here
+    /// (`RingPolymerSim::new` checks it).
+    ///
     /// Panics if the bead count of `state` differs from P or `state.masses.len()` from N.
     pub fn free_propagate(&self, state: &mut RingState, t: f64) {
         self.assert_shape(state);
@@ -107,6 +110,9 @@ impl RingPolymerIntegrator {
     /// One O step of length dt (T-1): PILE-L on the normal-mode momenta, or the identity for
     /// `Thermostat::Off`. Draws one normal per (k, i, d), k outermost, then atom i, then d.
     /// `Thermostat::Off` draws nothing (T-3).
+    ///
+    /// `state.masses` must be positive and finite (S-2); this is not checked here
+    /// (`RingPolymerSim::new` checks it).
     ///
     /// Panics if the bead count of `state` differs from P or `state.masses.len()` from N.
     pub fn thermostat_step(&self, state: &mut RingState, rng: &mut Rng) {
@@ -188,6 +194,25 @@ impl RingPolymerIntegrator {
     }
 }
 
+/// `IntegratorError::ShapeMismatch` unless `ev` has forces of shape `[p, n, 3]` and `p`
+/// energies (P-1).
+fn check_evaluation(ev: &Evaluation, p: usize, n: usize) -> Result<(), IntegratorError> {
+    for (what, expected, actual) in [
+        ("bead count of evaluated forces", p, ev.forces.n_beads()),
+        ("atom count of evaluated forces", n, ev.forces.n_atoms()),
+        ("number of evaluated energies", p, ev.energies.len()),
+    ] {
+        if expected != actual {
+            return Err(IntegratorError::ShapeMismatch {
+                what,
+                expected,
+                actual,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// p ← p + h·F, element-wise (the B step of I-1 with h = dt/2).
 fn kick(p: &mut Beads, f: &Beads, h: f64) {
     for (p, f) in p.as_mut_slice().iter_mut().zip(f.as_slice()) {
@@ -209,7 +234,9 @@ impl RingPolymerSim {
     /// Builds the simulation and performs the initialising `evaluate` (I-3).
     ///
     /// Errors: `IntegratorError::ShapeMismatch` if `state.q`, `state.p`, `state.masses` and the
-    /// integrator's P disagree; `IntegratorError::Potential` if the evaluation fails.
+    /// integrator's P disagree, or if the evaluation's forces are not `[P, N, 3]` or its energies
+    /// not length P (P-1); `IntegratorError::InvalidValue` if a mass is not positive and finite
+    /// (S-2); `IntegratorError::Potential` if the evaluation fails.
     pub fn new(
         state: RingState,
         cell: Option<Cell>,
@@ -235,7 +262,11 @@ impl RingPolymerSim {
                 });
             }
         }
+        for &m in &state.masses {
+            positive_finite("mass (m_e)", m)?;
+        }
         let ev = potential.evaluate(&state.q, cell.as_ref(), None)?;
+        check_evaluation(&ev, p, n)?;
         Ok(RingPolymerSim {
             state,
             forces: ev.forces,
@@ -249,8 +280,10 @@ impl RingPolymerSim {
     /// One step B(dt/2) A(dt/2) O(dt) A(dt/2) B(dt/2) (I-1), with exactly one `evaluate` (I-3).
     /// A O A run in normal-mode coordinates (one transform each way per step).
     ///
-    /// Errors: `IntegratorError::Potential` if the evaluation fails; the simulation is then
-    /// left unchanged.
+    /// Errors: `IntegratorError::Potential` if the evaluation fails, or
+    /// `IntegratorError::ShapeMismatch` if its forces are not `[P, N, 3]` or its energies not
+    /// length P (P-1). The simulation is then left unchanged, but the caller's `rng` has already
+    /// advanced: P·N·3 normal draws under PILE-L, none under `Off` (D-4).
     pub fn step(&mut self, rng: &mut Rng) -> Result<(), IntegratorError> {
         let ig = &self.integrator;
         let half = 0.5 * ig.dt;
@@ -265,6 +298,7 @@ impl RingPolymerSim {
         let q = ig.modes.to_beads(&qt);
         let mut p = ig.modes.to_beads(&pt);
         let ev = self.potential.evaluate(&q, self.cell.as_ref(), None)?;
+        check_evaluation(&ev, q.n_beads(), q.n_atoms())?;
         kick(&mut p, &ev.forces, half);
         self.state.q = q;
         self.state.p = p;
