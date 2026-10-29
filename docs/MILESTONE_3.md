@@ -110,6 +110,6 @@ Thermostats on classical runs, cell lists beyond what the list build needs, neig
 
 ## Acceptance
 
-- [ ] All tests pass; `check.sh` exits 0 (including the thread-count runs)
-- [ ] LAMMPS comparisons documented with version and agreement levels
-- [ ] Review done; no blocking findings
+- [x] All tests pass; `check.sh` exits 0 (including the thread-count runs)
+- [x] LAMMPS comparisons documented with version and agreement levels (LAMMPS 2025.07.22 in the JSON `versions` blocks; agreement levels in the doc comments of `lj_lammps.rs`, `vv_lennard_jones.rs`, `lj_thermo.rs`)
+- [x] Review done; no blocking findings (should-fix Q11 and nits Q12 fixed)
