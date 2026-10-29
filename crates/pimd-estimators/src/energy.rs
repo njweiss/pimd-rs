@@ -39,14 +39,7 @@ pub fn kinetic_primitive(q: &Beads, masses: &[f64], beta: f64) -> f64 {
 ///
 /// Panics if `forces` and `q` differ in shape.
 pub fn kinetic_virial(q: &Beads, forces: &Beads, beta: f64) -> f64 {
-    assert!(
-        q.n_beads() == forces.n_beads() && q.n_atoms() == forces.n_atoms(),
-        "q has shape [{}, {}, 3], forces [{}, {}, 3]",
-        q.n_beads(),
-        q.n_atoms(),
-        forces.n_beads(),
-        forces.n_atoms()
-    );
+    assert_same_shape(q, forces, "forces");
     let (p, n) = (q.n_beads(), q.n_atoms());
     let centroid = q.centroid();
     let mut sum = 0.0;
@@ -87,14 +80,7 @@ pub fn total_virial(q: &Beads, forces: &Beads, beta: f64, energies: &[f64]) -> f
 /// `energies.len()` from P.
 pub fn hamiltonian(state: &RingState, beta: f64, energies: &[f64]) -> f64 {
     let (q, p) = (&state.q, &state.p);
-    assert!(
-        q.n_beads() == p.n_beads() && q.n_atoms() == p.n_atoms(),
-        "q has shape [{}, {}, 3], p [{}, {}, 3]",
-        q.n_beads(),
-        q.n_atoms(),
-        p.n_beads(),
-        p.n_atoms()
-    );
+    assert_same_shape(q, p, "p");
     assert_energies(q, energies);
     let spring = spring_energy(q, &state.masses, beta);
     let mut kinetic = 0.0;
@@ -123,5 +109,16 @@ fn assert_energies(q: &Beads, energies: &[f64]) {
         "{} energies for {} beads",
         energies.len(),
         q.n_beads()
+    );
+}
+
+fn assert_same_shape(q: &Beads, other: &Beads, name: &str) {
+    assert!(
+        q.n_beads() == other.n_beads() && q.n_atoms() == other.n_atoms(),
+        "q has shape [{}, {}, 3], {name} [{}, {}, 3]",
+        q.n_beads(),
+        q.n_atoms(),
+        other.n_beads(),
+        other.n_atoms()
     );
 }
