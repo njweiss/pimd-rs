@@ -146,14 +146,13 @@ impl Potential for LennardJones {
             skin,
             shift,
         } = self.params;
-        if let Some(c) = cell {
-            let l_min = c.lengths().into_iter().fold(f64::INFINITY, f64::min);
-            if cutoff + skin > 0.5 * l_min {
-                return Err(PotentialError::InvalidParameter {
-                    what: "cutoff + skin (bohr), must be <= L_min/2",
-                    value: cutoff + skin,
-                });
-            }
+        if let Some(c) = cell
+            && cutoff + skin > 0.5 * c.min_length()
+        {
+            return Err(PotentialError::InvalidParameter {
+                what: "cutoff + skin (bohr), must be <= L_min/2",
+                value: cutoff + skin,
+            });
         }
         let v_shift = if shift {
             let s6 = (sigma / cutoff).powi(6);
@@ -167,30 +166,40 @@ impl Potential for LennardJones {
             self.lists = vec![self.template.clone(); p];
             self.built_cell = cell.copied();
         }
+        let x_all = positions.as_slice().as_chunks::<3>().0;
+        let bead = |j: usize| &x_all[n * j..n * (j + 1)];
+        // List rebuilds in parallel over beads; each list depends only on its own bead (N-3).
+        self.lists
+            .par_iter_mut()
+            .enumerate()
+            .try_for_each(|(j, list)| {
+                if fresh || list.needs_rebuild(bead(j)) {
+                    // C-4 was checked above, so the build cannot fail.
+                    list.build(bead(j), cell)
+                        .map_err(|_| PotentialError::InvalidParameter {
+                            what: "cutoff + skin (bohr), must be <= L_min/2",
+                            value: cutoff + skin,
+                        })?;
+                }
+                Ok(())
+            })?;
+        // Per-atom terms in parallel over all (bead, atom) pairs, collected in (bead, atom) index
+        // order, then reduced sequentially per bead in atom order: the same terms and reduction as
+        // a bead-by-bead evaluation, so results do not depend on the thread count (D-3).
+        let lists = &self.lists;
+        let terms: Vec<_> = (0..p * n)
+            .into_par_iter()
+            .map(|k| {
+                let (j, i) = (k / n, k % n);
+                self.atom_terms(i, bead(j), lists[j].neighbors(i), cell, v_shift, p == 1)
+            })
+            .collect();
         let mut energies = Vec::with_capacity(p);
         let mut forces = Beads::zeros(p, n);
         let mut virial = [[0.0; 3]; 3];
         for j in 0..p {
-            let x = positions.as_slice()[3 * n * j..3 * n * (j + 1)]
-                .as_chunks::<3>()
-                .0;
-            if fresh || self.lists[j].needs_rebuild(x) {
-                // C-4 was checked above, so the build cannot fail.
-                self.lists[j]
-                    .build(x, cell)
-                    .map_err(|_| PotentialError::InvalidParameter {
-                        what: "cutoff + skin (bohr), must be <= L_min/2",
-                        value: cutoff + skin,
-                    })?;
-            }
-            let list = &self.lists[j];
-            // Per-atom terms in parallel, collected in index order, reduced sequentially (D-3).
-            let terms: Vec<_> = (0..n)
-                .into_par_iter()
-                .map(|i| self.atom_terms(i, x, list.neighbors(i), cell, v_shift, p == 1))
-                .collect();
             let mut e = 0.0;
-            for (i, (ei, fi, wi)) in terms.iter().enumerate() {
+            for (i, (ei, fi, wi)) in terms[j * n..(j + 1) * n].iter().enumerate() {
                 e += ei;
                 forces.set(j, i, *fi);
                 for a in 0..3 {

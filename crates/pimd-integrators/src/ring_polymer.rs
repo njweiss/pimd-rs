@@ -63,6 +63,21 @@ impl RingPolymerIntegrator {
         n_beads: usize,
         thermostat: Thermostat,
     ) -> Result<Self, IntegratorError> {
+        Self::with_transform(dt, beta, n_beads, thermostat, Transform::Matrix)
+    }
+
+    /// As `new`, with the normal-mode transform algorithm `transform` (RP-4). `new(..)` is
+    /// `with_transform(.., Transform::Matrix)`. The mode order, frequencies, c_k and the
+    /// thermostat draw order (T-1) do not depend on `transform`.
+    ///
+    /// Errors: as `new`.
+    pub fn with_transform(
+        dt: f64,
+        beta: f64,
+        n_beads: usize,
+        thermostat: Thermostat,
+        transform: Transform,
+    ) -> Result<Self, IntegratorError> {
         positive_finite("dt (hbar/Eh)", dt)?;
         positive_finite("beta (1/Eh)", beta)?;
         let gamma0 = match thermostat {
@@ -72,7 +87,7 @@ impl RingPolymerIntegrator {
                 Some(1.0 / positive_finite("tau0 (hbar/Eh)", tau0)?)
             }
         };
-        let modes = NormalModes::new(n_beads, beta)?;
+        let modes = NormalModes::with_transform(n_beads, beta, transform)?;
         // T-2: γ_0 = 1/τ_0 (or 0), γ_k = 2 ω_k for ω_k > 0; T-1: c_k = exp(−γ_k dt).
         let c_k = gamma0.map(|gamma0| {
             modes
@@ -91,22 +106,6 @@ impl RingPolymerIntegrator {
             modes,
             c_k,
         })
-    }
-
-    /// As `new`, with the normal-mode transform algorithm `transform` (RP-4). `new(..)` is
-    /// `with_transform(.., Transform::Matrix)`. The mode order, frequencies, c_k and the
-    /// thermostat draw order (T-1) do not depend on `transform`.
-    ///
-    /// Errors: as `new`.
-    pub fn with_transform(
-        dt: f64,
-        beta: f64,
-        n_beads: usize,
-        thermostat: Thermostat,
-        transform: Transform,
-    ) -> Result<Self, IntegratorError> {
-        let _ = (dt, beta, n_beads, thermostat, transform);
-        unimplemented!()
     }
 
     /// Exact free ring-polymer propagation of `state` for time `t` (ħ/Eh, any sign), per normal
