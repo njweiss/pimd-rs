@@ -1,0 +1,30 @@
+# Liquid neon, LJ, the state point of crates/pimd-cli/tests/long_neon.rs and
+# crates/pimd-cli/tests/data/ipi_neon.json ("system" and "protocol" blocks), P = 16.
+# validation/run_neon.py runs it as 80 legs of 2 500 production steps (n_steps raised per leg).
+[system]
+n_atoms = 108
+mass_amu = 20.1797
+box_angstrom = 14.1
+
+[potential]
+kind = "lj"
+epsilon_kelvin = 35.6
+sigma_angstrom = 2.749
+cutoff_sigma = 2.2
+skin_sigma = 0.3
+shift = true
+
+[sampling]
+temperature_kelvin = 30.0
+n_beads = 16
+dt_fs = 2.0
+tau0_fs = 100.0
+n_equil = 5000
+n_steps = 200000
+stride = 10
+seed = 2026
+
+[output]
+rdf_bins = 70
+rdf_rmax_angstrom = 7.0
+checkpoint_every = 2500

@@ -14,3 +14,6 @@
 
 # Python bytecode
 __pycache__/
+
+# Validation run outputs (validation/run_neon.py, validation/benchmark.sh)
+/validation/runs/

@@ -13,6 +13,7 @@ tblite-python = "*"
 ase = "*"
 numpy = "*"
 scipy = "*"
+matplotlib = "*"   # validation/make_plots.py (owner-approved, MILESTONE_4)
 
 [feature.ref.tasks]
 lmp = "lmp"
