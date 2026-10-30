@@ -15,7 +15,8 @@ struct Args {
     /// Output directory.
     #[arg(long)]
     out: PathBuf,
-    /// Continue from this checkpoint file.
+    /// Continue from this checkpoint file. Restarting into the directory that holds the earlier
+    /// run's outputs overwrites its observables.csv and run.log.
     #[arg(long)]
     restart: Option<PathBuf>,
 }
