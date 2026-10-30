@@ -19,7 +19,7 @@ Non-goals: training MLIPs, a general-purpose MD package, electrostatics (Ewald/P
 
 - **D-1** f64 everywhere in the core. Casting to f32 happens only inside model adapters.
 - **D-2** All randomness comes from `pimd_core::Rng`: ChaCha8 (`rand_chacha`) seeded from a `u64`; standard normals from `rand_distr::StandardNormal`. Draw order is part of the contract (see T-1); it is reproducible for fixed dependency versions (pinned by `Cargo.lock`).
-- **D-3** For a fixed seed and config, results are bitwise identical across runs and across thread counts. Parallel code computes per-atom (or fixed-size-chunk) partial results and combines them in a fixed order. Forbidden: float reductions whose order depends on scheduling, `HashMap`/`HashSet` iteration that can affect numbers, wall-clock or address-dependent behaviour. The guarantee is per configuration and per machine: alternative algorithms selected by configuration (e.g. the FFT normal-mode transform, M4) are bitwise reproducible within that setting but agree with each other only to a stated tolerance, and bitwise equality across different CPUs is not promised.
+- **D-3** For a fixed seed and config, results are bitwise identical across runs and across thread counts. Parallel code computes per-atom (or fixed-size-chunk) partial results and combines them in a fixed order. Forbidden: float reductions whose order depends on scheduling, `HashMap`/`HashSet` iteration that can affect numbers, wall-clock or address-dependent behaviour. The guarantee is per configuration and per machine: alternative algorithms selected by configuration (e.g. the FFT normal-mode transform, M4) are bitwise reproducible within that setting but agree with each other only to a stated tolerance, and bitwise equality across different CPUs is not promised. With an external force provider (socket backend, K-rules) the guarantees hold only if every client is deterministic and keeps no state between calls (Q18).
 - **D-4** Every stochastic step documents its draw order.
 
 ## 3. Data layout and sign conventions
@@ -94,6 +94,15 @@ All return totals over atoms and Cartesian components, in Eh. The energy estimat
 - **P-3** `LennardJones`: V(r) = 4ε[(σ/r)¹² − (σ/r)⁶] for r < r_c, 0 otherwise. If `shift`, V(r_c) is subtracted inside r < r_c. No tail corrections. Forces are the exact derivative (discontinuous at r_c when unshifted, matching LAMMPS `lj/cut`).
 - **P-4** Native potentials return `Err(PotentialError::Unsupported)` when `subset` is `Some`.
 - **P-5** `virial` is `Some(W)` for `LennardJones` when P = 1 (W as in E-8, in Eh) and `None` when P > 1; other potentials may return `None`.
+
+## 9a. Socket backend (i-PI protocol)
+
+- **K-1** `SocketPotential` (crate `pimd-socket`) implements `Potential` by acting as the i-PI protocol *server*: it binds a Unix or TCP socket, accepts `n_clients` force-provider clients, sends positions and receives energies and forces. The engine never starts or knows the client's model (P-1).
+- **K-2** Wire format (i-PI 3.3.1, `ipi/interfaces/sockets.py`): 12-byte ASCII headers, upper case, right-padded with spaces (`STATUS`, `READY`, `NEEDINIT`, `INIT`, `POSDATA`, `HAVEDATA`, `GETFORCE`, `FORCEREADY`, `EXIT`); integers int32 and floats float64, little-endian. `INIT`: bead index, string length, string. `POSDATA`: cell h (9 values, row-major), h⁻¹ (9), atom count, 3N positions. `FORCEREADY`: energy, atom count, 3N forces, virial (9, row-major), extra-string length, extra string. All quantities in atomic units (U-1), so no conversion happens in the engine.
+- **K-3** Cells: for `Some(cell)`, h = diag(L_x, L_y, L_z) and h⁻¹ = diag(1/L); for `None`, h and h⁻¹ are all zeros (gas phase; the client must treat its system as non-periodic).
+- **K-4** Bead j is evaluated by client j mod n_clients (clients numbered in accept order). Each client handles its beads in ascending j; different clients run concurrently; results are stored by bead index, so they do not depend on timing. A client answering `NEEDINIT` is sent `INIT` with its current bead index and an empty string, then `STATUS` again.
+- **K-5** A returned atom count different from N, a non-finite number, an unexpected header, a closed connection or a timeout is `PotentialError::Backend(String)`; with several failures the error of the lowest bead index is returned. `subset = Some` is `Unsupported` (P-4).
+- **K-6** `virial` is `Some(W_0)` from the client for P = 1 and `None` for P > 1 (as P-5). Dropping the potential sends `EXIT` to every client and removes a Unix socket file it created.
 
 ## 10. Neighbor lists
 
