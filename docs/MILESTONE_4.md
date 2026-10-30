@@ -191,4 +191,4 @@ Para-H₂ and Silvera-Goldman (stretch, only after parameters are cross-checked 
 - [x] Long validation passes; agreement levels recorded in `validation/RESULTS.md` (`CHECK_LONG=1 CHECK_IPI=1` passed on e2bdfd7, 54.5 min, all four reference datasets regenerated and matching)
 - [x] Plots and performance table reproduced by scripts (`validation/run_neon.py`, `make_plots.py`, `benchmark.sh`; benchmark taken under background load, see RESULTS.md)
 - [x] Review done; no blocking findings; `QUESTIONS.md` has no open entries (should-fix Q16 fixed, Q17 declined, Q18 deferred to M5)
-- [ ] **R1 decision by owner:** publish or hold
+- [x] **R1 decision by owner:** hold (2026-10-30); work continues with M5
