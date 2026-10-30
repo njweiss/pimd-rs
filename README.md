@@ -16,7 +16,7 @@ across checkpoint/restart.
 | M1 Foundations | units, RNG, beads, cell, neighbor lists, normal modes | merged |
 | M2 Ring-polymer sampling | BAOAB, PILE-L, estimators, harmonic and double-well validation | merged |
 | M3 Classical core | Lennard-Jones, velocity Verlet, RDF, pressure, LAMMPS comparisons | merged |
-| M4 Quantum liquid | `pimd-rs` binary, config, checkpoint/restart, liquid neon vs i-PI | on branch `milestone-4` |
+| M4 Quantum liquid | `pimd-rs` binary, config, checkpoint/restart, liquid neon vs i-PI | merged |
 
 Release gate R1 (after M4) is pending the owner's decision. Not implemented: electrostatics,
 constraints, dynamics (RPMD/CMD/TRPMD), ML potentials, non-orthorhombic cells, Python bindings.

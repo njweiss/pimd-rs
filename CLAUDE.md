@@ -53,7 +53,7 @@ pixi run test-validation        # same as CHECK_LONG=1 ./scripts/check.sh
 | M1 Foundations | merged |
 | M2 Ring-polymer sampling | merged |
 | M3 Classical core | merged |
-| M4 Quantum liquid, then release gate R1 | not started |
+| M4 Quantum liquid, then release gate R1 | merged; R1 decision pending |
 | M5–M8 | not briefed yet (see SPEC §11) |
 
 Update this table when a milestone merges.
