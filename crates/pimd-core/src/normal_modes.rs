@@ -5,6 +5,17 @@ use std::f64::consts::PI;
 use crate::beads::Beads;
 use crate::error::{CoreError, positive_finite};
 
+/// How `NormalModes::to_normal` / `to_beads` are computed (RP-4). Both give the same RP-4
+/// columns and normalisation; they agree to rounding, not bitwise (D-3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Transform {
+    /// Dense P × P matrix product with C (the M1 transform).
+    #[default]
+    Matrix,
+    /// Real FFT of length P, mapped onto the RP-4 columns.
+    Fft,
+}
+
 /// Orthogonal normal-mode transform of a P-bead ring polymer (RP-4).
 ///
 /// `matrix()` is C, row j = bead, column k = mode, in the fixed RP-4 column order;
@@ -62,6 +73,25 @@ impl NormalModes {
         })
     }
 
+    /// As `new`, with the transform algorithm `transform` (RP-4). `new(p, beta)` is
+    /// `with_transform(p, beta, Transform::Matrix)`. `frequencies()` and `matrix()` do not depend
+    /// on `transform`.
+    ///
+    /// Errors: as `new`.
+    pub fn with_transform(
+        n_beads: usize,
+        beta: f64,
+        transform: Transform,
+    ) -> Result<NormalModes, CoreError> {
+        let _ = (n_beads, beta, transform);
+        unimplemented!()
+    }
+
+    /// The transform algorithm used by `to_normal` / `to_beads`.
+    pub fn transform(&self) -> Transform {
+        unimplemented!()
+    }
+
     /// Number of beads P.
     pub fn n_beads(&self) -> usize {
         self.n_beads
@@ -88,19 +118,19 @@ impl NormalModes {
     ///
     /// Panics if `beads.n_beads()` differs from P.
     pub fn to_normal(&self, beads: &Beads) -> Beads {
-        self.transform(beads, false)
+        self.apply_matrix(beads, false)
     }
 
     /// Normal-mode to bead coordinates, the inverse of `to_normal`: q_j = Σ_k C_jk q̃_k.
     ///
     /// Panics if `modes.n_beads()` differs from P.
     pub fn to_beads(&self, modes: &Beads) -> Beads {
-        self.transform(modes, true)
+        self.apply_matrix(modes, true)
     }
 
     /// out_a = Σ_b M_ab x_b with M = Cᵀ (`inverse = false`) or C (`inverse = true`),
     /// summed over b in ascending order (deterministic, D-3).
-    fn transform(&self, x: &Beads, inverse: bool) -> Beads {
+    fn apply_matrix(&self, x: &Beads, inverse: bool) -> Beads {
         let p = self.n_beads;
         assert_eq!(
             x.n_beads(),

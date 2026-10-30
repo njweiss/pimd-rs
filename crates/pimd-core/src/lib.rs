@@ -14,5 +14,5 @@ pub use beads::Beads;
 pub use cell::Cell;
 pub use error::CoreError;
 pub use neighbor::NeighborList;
-pub use normal_modes::NormalModes;
-pub use rng::Rng;
+pub use normal_modes::{NormalModes, Transform};
+pub use rng::{Rng, RngState};

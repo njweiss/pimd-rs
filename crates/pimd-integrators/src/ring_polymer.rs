@@ -1,6 +1,6 @@
 //! Ring-polymer state, BAOAB integrator with PILE-L (SPEC I-1 … I-5, T-1 … T-3).
 
-use pimd_core::{Beads, Cell, NormalModes, Rng};
+use pimd_core::{Beads, Cell, NormalModes, Rng, Transform};
 use pimd_potentials::{Evaluation, Potential};
 
 use crate::error::IntegratorError;
@@ -91,6 +91,22 @@ impl RingPolymerIntegrator {
             modes,
             c_k,
         })
+    }
+
+    /// As `new`, with the normal-mode transform algorithm `transform` (RP-4). `new(..)` is
+    /// `with_transform(.., Transform::Matrix)`. The mode order, frequencies, c_k and the
+    /// thermostat draw order (T-1) do not depend on `transform`.
+    ///
+    /// Errors: as `new`.
+    pub fn with_transform(
+        dt: f64,
+        beta: f64,
+        n_beads: usize,
+        thermostat: Thermostat,
+        transform: Transform,
+    ) -> Result<Self, IntegratorError> {
+        let _ = (dt, beta, n_beads, thermostat, transform);
+        unimplemented!()
     }
 
     /// Exact free ring-polymer propagation of `state` for time `t` (ħ/Eh, any sign), per normal
