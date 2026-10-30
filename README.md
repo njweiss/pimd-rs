@@ -18,7 +18,7 @@ across checkpoint/restart.
 | M3 Classical core | Lennard-Jones, velocity Verlet, RDF, pressure, LAMMPS comparisons | merged |
 | M4 Quantum liquid | `pimd-rs` binary, config, checkpoint/restart, liquid neon vs i-PI | merged |
 
-Release gate R1 (after M4) is pending the owner's decision. Not implemented: electrostatics,
+Release gate R1 (after M4): on hold; not yet published. Not implemented: electrostatics,
 constraints, dynamics (RPMD/CMD/TRPMD), ML potentials, non-orthorhombic cells, Python bindings.
 The rules and conventions are in [`docs/SPEC.md`](docs/SPEC.md); the process is in
 [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
