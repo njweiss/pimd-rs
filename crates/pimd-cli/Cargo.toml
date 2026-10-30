@@ -1,0 +1,34 @@
+[package]
+name = "pimd-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "pimd_cli"
+
+[[bin]]
+name = "pimd-rs"
+path = "src/main.rs"
+
+[dependencies]
+pimd-core.workspace = true
+pimd-potentials.workspace = true
+pimd-integrators.workspace = true
+pimd-estimators.workspace = true
+thiserror.workspace = true
+# Config parsing only (MILESTONE_4); the checkpoint format is hand-written.
+serde.workspace = true
+toml.workspace = true
+# Command line of the `pimd-rs` binary.
+clap.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+# Thread-pool control for the D-3 determinism tests.
+rayon.workspace = true
+
+[features]
+# Long statistical validation runs (WORKFLOW "Long validation"); run by CHECK_LONG=1 scripts/check.sh.
+long-validation = []

@@ -5,6 +5,7 @@ members = [
     "crates/pimd-potentials",
     "crates/pimd-integrators",
     "crates/pimd-estimators",
+    "crates/pimd-cli",
 ]
 
 [workspace.package]
@@ -17,8 +18,13 @@ license = "MIT"
 pimd-core = { path = "crates/pimd-core" }
 pimd-potentials = { path = "crates/pimd-potentials" }
 pimd-integrators = { path = "crates/pimd-integrators" }
+pimd-estimators = { path = "crates/pimd-estimators" }
 thiserror = "2"
 rand = "0.10"
 rand_chacha = "0.10"
 rand_distr = "0.6"
 rayon = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+clap = { version = "4", features = ["derive"] }
+tempfile = "3"
