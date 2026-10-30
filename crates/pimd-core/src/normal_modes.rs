@@ -211,11 +211,16 @@ impl NormalModes {
         let p = self.n_beads;
         let n3 = x.n_atoms() * 3;
         let src = x.as_slice();
-        // Transpose to one contiguous length-P series per (atom, component).
-        let mut buf: Vec<Complex<f64>> = (0..n3 * p)
-            .map(|idx| Complex::new(src[(idx % p) * n3 + idx / p], 0.0))
-            .collect();
-        plans.forward.process(&mut buf);
+        // Transpose to one contiguous length-P series per (atom, component), followed by the FFT
+        // scratch space so one allocation serves both.
+        let scratch_len = plans.forward.get_inplace_scratch_len();
+        let mut buf = Vec::with_capacity(n3 * p + scratch_len);
+        for e in 0..n3 {
+            buf.extend((0..p).map(|j| Complex::new(src[j * n3 + e], 0.0)));
+        }
+        buf.resize(n3 * p + scratch_len, Complex::new(0.0, 0.0));
+        let (buf, scratch) = buf.split_at_mut(n3 * p);
+        plans.forward.process_with_scratch(buf, scratch);
         let pf = p as f64;
         let (norm0, norm) = (1.0 / pf.sqrt(), (2.0 / pf).sqrt());
         let mut out = Beads::zeros(p, x.n_atoms());
@@ -243,7 +248,9 @@ impl NormalModes {
         let src = modes.as_slice();
         let pf = p as f64;
         let (norm0, half) = (1.0 / pf.sqrt(), 1.0 / (2.0 * pf).sqrt());
-        let mut buf = vec![Complex::new(0.0, 0.0); n3 * p];
+        let scratch_len = plans.inverse.get_inplace_scratch_len();
+        let mut buf = vec![Complex::new(0.0, 0.0); n3 * p + scratch_len];
+        let (buf, scratch) = buf.split_at_mut(n3 * p);
         for (e, series) in buf.chunks_exact_mut(p).enumerate() {
             series[0] = Complex::new(norm0 * src[e], 0.0);
             for m in 1..=(p - 1) / 2 {
@@ -258,7 +265,7 @@ impl NormalModes {
                 series[p / 2] = Complex::new(norm0 * src[(p - 1) * n3 + e], 0.0);
             }
         }
-        plans.inverse.process(&mut buf);
+        plans.inverse.process_with_scratch(buf, scratch);
         let mut out = Beads::zeros(p, modes.n_atoms());
         let dst = out.as_mut_slice();
         for (e, series) in buf.chunks_exact(p).enumerate() {

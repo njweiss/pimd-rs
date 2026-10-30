@@ -97,7 +97,7 @@ impl Config {
     pub(crate) fn hash(&self) -> u64 {
         let (sy, po, sa) = (&self.system, &self.potential, &self.sampling);
         let mut bytes = Vec::new();
-        let mut u = |v: u64| bytes.extend_from_slice(&v.to_le_bytes());
+        let mut u = |v: u64| put_u64(&mut bytes, v);
         u(sy.n_atoms as u64);
         u(sy.mass.to_bits());
         for l in sy.cell.lengths() {
@@ -210,6 +210,11 @@ struct RawOutput {
 }
 
 /// `InvalidValue` naming `field` (`section.key`).
+/// Appends `v` as 8 little-endian bytes (config hash and checkpoint encoding).
+pub(crate) fn put_u64(w: &mut Vec<u8>, v: u64) {
+    w.extend_from_slice(&v.to_le_bytes());
+}
+
 fn invalid(field: &str, value: f64) -> CliError {
     CliError::InvalidValue {
         what: field.to_string(),

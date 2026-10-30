@@ -1,7 +1,6 @@
 //! The run driver: initial state, equilibration, production with recording, checkpoint/restart
 //! (MILESTONE_4; I-1, T-1, E-1 … E-4, E-7, D-2, D-3).
 
-use std::fmt::Write as _;
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -12,7 +11,7 @@ use pimd_estimators::{Rdf, potential_mean, total_primitive, total_virial};
 use pimd_integrators::{RingPolymerIntegrator, RingPolymerSim, RingState, Thermostat};
 use pimd_potentials::LennardJones;
 
-use crate::config::Config;
+use crate::config::{Config, put_u64};
 use crate::error::CliError;
 
 /// Results of a run (or of the run continued by `run_from_checkpoint`).
@@ -40,15 +39,12 @@ pub fn run(config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
     let mut rng = Rng::from_seed(s.seed);
     let state = initial_state(config, &mut rng);
     let sim = new_sim(config, state)?;
-    let rdf = match &config.output.rdf {
-        Some(r) => Some(Rdf::new(
-            r.n_bins,
-            r.r_max,
-            config.system.cell,
-            config.system.n_atoms,
-        )?),
-        None => None,
-    };
+    let rdf = config
+        .output
+        .rdf
+        .as_ref()
+        .map(|r| Rdf::new(r.n_bins, r.r_max, config.system.cell, config.system.n_atoms))
+        .transpose()?;
     let mut d = Driver {
         sim,
         rng,
@@ -188,13 +184,17 @@ fn new_sim(config: &Config, state: RingState) -> Result<RingPolymerSim, CliError
 /// `run.log`: version, seed, start point, config hash and the parsed config. Nothing
 /// machine- or time-dependent.
 fn write_log(config: &Config, out_dir: &Path, start: &str) -> Result<(), CliError> {
-    let mut log = String::new();
-    // Writing to a String cannot fail.
-    let _ = writeln!(log, "pimd-rs {}", env!("CARGO_PKG_VERSION"));
-    let _ = writeln!(log, "seed = {}", config.sampling.seed);
-    let _ = writeln!(log, "start = {start}");
-    let _ = writeln!(log, "config hash = {:#018x}", config.hash());
-    let _ = writeln!(log, "config (atomic units) = {config:#?}");
+    let log = format!(
+        concat!(
+            "pimd-rs {}\nseed = {}\nstart = {start}\n",
+            "config hash = {:#018x}\nconfig (atomic units) = {config:#?}\n",
+        ),
+        env!("CARGO_PKG_VERSION"),
+        config.sampling.seed,
+        config.hash(),
+        start = start,
+        config = config,
+    );
     fs::write(out_dir.join("run.log"), log)?;
     Ok(())
 }
@@ -299,7 +299,7 @@ impl Driver {
         let (p, n) = (st.q.n_beads(), st.q.n_atoms());
         let rng = self.rng.snapshot().to_bytes();
         let mut w = Vec::with_capacity(128 + rng.len() + 8 * (3 * p * n * 3 + p));
-        let u = |w: &mut Vec<u8>, v: u64| w.extend_from_slice(&v.to_le_bytes());
+        let u = put_u64;
         w.extend_from_slice(MAGIC);
         u(&mut w, VERSION);
         u(&mut w, config.hash());
@@ -319,11 +319,11 @@ impl Driver {
         for &x in self.sim.energies() {
             u(&mut w, x.to_bits());
         }
-        // `self.rdf` is built from `config.output.rdf`, so both are present or both absent.
+        // `self.rdf` is built from `config.output.rdf` (n_bins, r_max); it holds the counts.
         match (&self.rdf, &config.output.rdf) {
             (Some(r), Some(rc)) => {
                 u(&mut w, 1);
-                u(&mut w, r.counts().len() as u64);
+                u(&mut w, rc.n_bins as u64);
                 u(&mut w, rc.r_max.to_bits());
                 u(&mut w, r.n_samples() as u64);
                 for &c in r.counts() {
@@ -458,9 +458,7 @@ impl<'a> Reader<'a> {
     }
 
     fn u64(&mut self) -> Result<u64, CliError> {
-        let mut b = [0u8; 8];
-        b.copy_from_slice(self.take(8)?);
-        Ok(u64::from_le_bytes(b))
+        Ok(le_u64(self.take(8)?))
     }
 
     fn usize(&mut self) -> Result<usize, CliError> {
@@ -479,11 +477,14 @@ impl<'a> Reader<'a> {
         )?;
         Ok(raw
             .chunks_exact(8)
-            .map(|c| {
-                let mut b = [0u8; 8];
-                b.copy_from_slice(c);
-                f64::from_bits(u64::from_le_bytes(b))
-            })
+            .map(|c| f64::from_bits(le_u64(c)))
             .collect())
     }
+}
+
+/// The u64 encoded little-endian in the 8 bytes `b`.
+fn le_u64(b: &[u8]) -> u64 {
+    let mut a = [0u8; 8];
+    a.copy_from_slice(b);
+    u64::from_le_bytes(a)
 }
