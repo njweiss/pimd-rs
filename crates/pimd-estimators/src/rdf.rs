@@ -108,6 +108,30 @@ impl Rdf {
         Ok(())
     }
 
+    /// Rebuilds an RDF from saved state (Q14): the arguments of `new` plus `counts` (as returned by
+    /// `counts`, length `n_bins`) and `n_samples`. The result behaves exactly like the RDF that was
+    /// saved, including for further `accumulate` calls.
+    ///
+    /// Errors: as `new` (`EstimatorError::InvalidValue`); `EstimatorError::ShapeMismatch` if
+    /// `counts.len()` differs from `n_bins`.
+    pub fn from_parts(
+        n_bins: usize,
+        r_max: f64,
+        cell: Cell,
+        n_atoms: usize,
+        counts: Vec<f64>,
+        n_samples: usize,
+    ) -> Result<Rdf, EstimatorError> {
+        let _ = (n_bins, r_max, cell, n_atoms, counts, n_samples);
+        unimplemented!()
+    }
+
+    /// Accumulated Σ C_b/P per bin over all samples (E-7), length `n_bins`; saved by checkpoints
+    /// together with `n_samples` (Q14).
+    pub fn counts(&self) -> &[f64] {
+        unimplemented!()
+    }
+
     /// Number of configurations accumulated.
     pub fn n_samples(&self) -> usize {
         self.n_samples

@@ -2,6 +2,7 @@
 # Single pass/fail gate. Exits non-zero on the first failure.
 #   ./scripts/check.sh              fast checks (what implementers iterate on)
 #   CHECK_LONG=1 ./scripts/check.sh also runs long validation and reference-data checks
+#   CHECK_IPI=1 (with CHECK_LONG=1) also regenerates the slow i-PI reference (~34 min)
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 

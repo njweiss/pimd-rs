@@ -55,6 +55,17 @@ impl RingPolymerIntegrator {
         transform: Transform) -> Result<Self, IntegratorError>;   // `new` == with_transform(.., Matrix)
 }
 
+// pimd_core::units (addition, Q13)
+pub const HARTREE_IN_EV: f64 = 27.211386245988;                 // CODATA 2018
+
+// pimd_estimators::Rdf (additions, Q14)
+impl Rdf {
+    pub fn counts(&self) -> &[f64];                               // accumulated Σ C_b/P per bin
+    pub fn from_parts(n_bins: usize, r_max: f64, cell: Cell, n_atoms: usize,
+        counts: Vec<f64>, n_samples: usize) -> Result<Rdf, EstimatorError>;
+        // validates as `new` (InvalidValue); counts.len() != n_bins → ShapeMismatch
+}
+
 // pimd_cli::error
 pub enum CliError {
     Parse(String),                                   // TOML syntax, missing field, unknown key
@@ -82,7 +93,7 @@ pub fn run_from_checkpoint(config: &Config, checkpoint: &std::path::Path, out_di
     -> Result<RunSummary, CliError>;
 ```
 
-Allowed new dependencies: `serde`, `toml`, `clap` (binary only); `rustfft` in `pimd-core` for the FFT transform, scalar planner only (pending owner approval, see Clarifications). A fixed, hand-written checkpoint format (little-endian f64/u64, header with magic + version) is preferred over a serialization framework; `serde` is for config only. Test-only: `tempfile`.
+Allowed new dependencies: `serde`, `toml`, `clap` (binary only); `rustfft` in `pimd-core` for the FFT transform, scalar planner only (owner-approved). A fixed, hand-written checkpoint format (little-endian f64/u64, header with magic + version) is preferred over a serialization framework; `serde` is for config only. Test-only: `tempfile`.
 
 ## Config format (TOML, user units)
 
@@ -125,6 +136,17 @@ Binary (`clap`): `pimd-rs <config.toml> --out <dir> [--restart <checkpoint>]`.
 - **Restart determinism:** a run of 2K steps equals a run of K steps → checkpoint → K more, bitwise, including RNG state, accumulated observables and the RDF accumulator. Checkpoints contain everything needed (positions, momenta, forces, energies, RNG, step counter, accumulators); a mismatching config (hash) is an error (`CliError::Checkpoint`). The config hash is 64-bit FNV-1a over a canonical little-endian encoding of the parsed config (in SI-free internal units), covering `[system]`, `[potential]` and `[sampling]` except `n_steps`; `[output]` (including `checkpoint_every`) is excluded. A run always writes a checkpoint at its end. `run_from_checkpoint` continues until production step `n_steps` of the given config. Neighbor lists are not checkpointed: LJ results do not depend on list history (pairs with r ≥ r_c are skipped, neighbors summed in ascending order).
 - **Outputs:** `observables.csv` with header `step,e_prim_eh,e_vir_eh,v_eh,t_est_k,e_prim_mev,e_vir_mev,e_prim_k,e_vir_k`, all energies per atom; V is V̄ (E-3) per atom; k_B·T_est = Σ_{j,i} |p_{j,i}|²/m_i / (3 N P²). Numbers are written with Rust's `{}` for f64 (shortest round-trip), so files carry exact values. `rdf.csv` (`r_bohr,r_angstrom,g`), `checkpoint.bin`, `run.log` (seed, versions, config echo). No output contains timestamps or anything machine- or time-dependent, so repeated runs are byte-identical. After a restart, `observables.csv` in the new `out_dir` holds only rows after the checkpoint; the restart test compares the concatenation (header once) with the uninterrupted file.
 
+- **Details pinned by the tests (Q15, owner-confirmed):**
+  1. `Config` has public fields `system: SystemConfig { n_atoms, mass (m_e), cell: Cell }`, `potential: LjParams` (atomic units), `sampling: SamplingConfig { temperature_kelvin, beta, n_beads, dt, tau0 (ħ/Eh), n_equil, n_steps, stride, seed, normal_modes: Transform }`, `output: OutputConfig { rdf: Option<RdfConfig { n_bins, r_max (bohr) }>, checkpoint_every }`; all derive `Debug, Clone, PartialEq`, as does `RunSummary`. `[output]` is required.
+  2. `InvalidValue.what` is the TOML `"section.key"` (e.g. `"sampling.temperature_kelvin"`); a C-4 violation names `"potential.cutoff_sigma"` or `"potential.skin_sigma"`. Negative integer fields are serde type errors (`Parse`).
+  3. One `Rng::from_seed(seed)` draws the initial momenta and then drives the thermostat (D-2).
+  4. `checkpoint.bin` depends only on state, accumulators and the config hash (no `n_steps`, no paths), so uninterrupted and restarted runs write identical bytes at the same final step.
+  5. Corrupt checkpoints (empty, truncated, halved, magic at offset 0 zeroed, unrelated text) give `CliError::Checkpoint`, not `Io`.
+  6. n_side = ⌈N^(1/3)⌉ is computed exactly with integers (N = 27 gives 3).
+  7. `rdf_bins` and `rdf_rmax_angstrom` given alone is an error; a two-value `box_angstrom` is an error.
+  8. `run` creates `out_dir` if it does not exist.
+- **meV columns (Q13):** converted with `units::HARTREE_IN_EV` × 1000.
+- **RDF in checkpoints (Q14):** the driver saves `Rdf::counts()` and `n_samples()` and restores with `Rdf::from_parts`; there is no second E-7 histogram in `pimd-cli`.
 - **`Cell::min_length()` (owner-approved after M3):** new public method returning the shortest cell edge (bohr); replaces the three copies of the L_min fold in `NeighborList::build`, `Rdf::new` and `LennardJones::evaluate`. Bit-identical.
 - **Last evaluation (Q8, decided after M3):** no change in M4. No M4 observable needs the virial (pressure is not recorded, and P-5 gives no virial at P > 1). `VelocityVerlet::step` keeps its signature. When pressure becomes an observable, `RingPolymerSim` keeps the last virial alongside its forces and energies (one field and an accessor) rather than `step` returning an `Evaluation`.
 - **Normal-mode transform option (decided after M3):** config key `sampling.normal_modes = "matrix" | "fft"`, default `"matrix"` (the current RP-4 transform). D-3 is unchanged; bitwise guarantees hold per transform setting and per machine (see the D-3 note in SPEC). The setting is part of the config hash, so a checkpoint restarts only under the same setting. The FFT path produces exactly the RP-4 columns (centroid, then cos/sin pairs, then the alternating mode for even P) with the RP-4 normalisation, for any P ≥ 1 including odd P; `frequencies()` and `matrix()` are unchanged. Profiled after M3 (neon LJ, N = 108, release, 1 thread): step 0.54 / 2.1 / 4.0 ms at P = 4 / 16 / 32, of which the transforms are about 1 % / 3.5 % / 7.5 %; the option is kept for larger P and cheap potentials. Use `rustfft`'s scalar planner (`FftPlannerScalar`) so results do not depend on CPU features. If the transform option needs more than additive constructors (`with_transform`) and an internal dispatch in `NormalModes`, stop and report: the owner keeps it only if it does not require a major refactor.
@@ -145,7 +167,7 @@ Cargo tests (fast; small systems and short runs):
 
 Long validation (`validation/`, run with `CHECK_LONG=1 ./scripts/check.sh` via the cargo feature `long-validation`; no `#[ignore]`):
 
-- **vs i-PI:** the same LJ neon system (same ε, σ, cutoff and shift policy, same β, P, N, box), i-PI with LAMMPS `fix ipi` (`pair_style lj/cut`) as the LJ client (WORKFLOW Phase 0), PILE-L with matching thermostat settings (`pile_lambda = 1` so that γ_k = 2ω_k, T-2; i-PI splits the step differently from B A O A B, which is allowed with dt small enough that the splitting bias stays inside the error bars, stated in a comment). Compare ⟨E_vir⟩, ⟨E_prim⟩ and g(r) within 5σ_combined (block averaging on both sides). The i-PI inputs, a generator script (`gen_ipi_neon.py`, accepting `--out`) and the reference observables (JSON with error bars, i-PI and LAMMPS versions in the `versions` block) live in `crates/pimd-cli/tests/data/`, so they are locked with the tests and regenerated by `validation/verify_reference_data.py`; no time budget is set for the long gate, but the author states the i-PI run time. Any systematic disagreement goes to `QUESTIONS.md`.
+- **vs i-PI:** the same LJ neon system (same ε, σ, cutoff and shift policy, same β, P, N, box), i-PI with LAMMPS `fix ipi` (`pair_style lj/cut`) as the LJ client (WORKFLOW Phase 0), PILE-L with matching thermostat settings (`pile_lambda = 1` so that γ_k = 2ω_k, T-2; i-PI splits the step differently from B A O A B, which is allowed with dt small enough that the splitting bias stays inside the error bars, stated in a comment). Compare ⟨E_vir⟩, ⟨E_prim⟩ and g(r) within 5σ_combined (block averaging on both sides). The i-PI inputs, a generator script (`gen_ipi_neon.py`, accepting `--out`) and the reference observables (JSON with error bars, i-PI and LAMMPS versions in the `versions` block) live in `crates/pimd-cli/tests/data/`, so they are locked with the tests and regenerated by `validation/verify_reference_data.py`; regenerating it takes about 34 min, so `verify_reference_data.py` runs `gen_ipi_neon.py` only with `CHECK_IPI=1` (run before merging M4 and whenever i-PI, LAMMPS or the generator changes); `CHECK_LONG=1` alone still runs `long_neon.rs` against the committed JSON. Any systematic disagreement goes to `QUESTIONS.md`.
 - **Quantum vs. classical:** P = 1 vs P = 16 at a low temperature where the effect is visible: g(r) first-peak height and ⟨E⟩ shifts have the expected sign (quantum delocalisation lowers the peak and raises the energy at fixed T); quote the numbers with error bars.
 - **Convergence in P:** P ∈ {4, 8, 16, 32}: ⟨E_vir⟩ approaches a limit with O(1/P²) differences; the virial estimator's block-averaged error is smaller than the primitive's at P ≥ 8.
 

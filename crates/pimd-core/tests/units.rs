@@ -13,6 +13,7 @@ fn constants_match_spec_values() {
     assert_eq!(units::FS_IN_ATOMIC_TIME, 41.341373336561);
     assert_eq!(units::HARTREE_IN_WAVENUMBERS, 219474.6313632);
     assert_eq!(units::HARTREE_IN_KCAL_PER_MOL, 627.5094740631);
+    assert_eq!(units::HARTREE_IN_EV, 27.211386245988); // added in M4 (Q13)
 }
 
 /// U-4: β(300 K) = 1/(k_B · 300) with k_B from SPEC U-2, to relative 1e-14.

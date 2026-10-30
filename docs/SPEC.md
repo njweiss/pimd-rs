@@ -11,7 +11,7 @@ Non-goals: training MLIPs, a general-purpose MD package, electrostatics (Ewald/P
 ## 1. Units and constants
 
 - **U-1** All internal quantities are Hartree atomic units: ħ = 1, length in bohr, mass in electron masses, energy in hartree (Eh), time in ħ/Eh. Temperature enters only through β.
-- **U-2** Constants (CODATA 2018), defined once in `pimd_core::units`: k_B = 3.1668115634556e-6 Eh/K; 1 amu = 1822.888486209 m_e; 1 bohr = 0.529177210903 Å; 1 fs = 41.341373336561 a.u. of time; 1 Eh = 219474.6313632 cm⁻¹; 1 Eh = 627.5094740631 kcal/mol.
+- **U-2** Constants (CODATA 2018), defined once in `pimd_core::units`: k_B = 3.1668115634556e-6 Eh/K; 1 amu = 1822.888486209 m_e; 1 bohr = 0.529177210903 Å; 1 fs = 41.341373336561 a.u. of time; 1 Eh = 219474.6313632 cm⁻¹; 1 Eh = 627.5094740631 kcal/mol; 1 Eh = 27.211386245988 eV (Q13).
 - **U-3** No unit constants or conversion factors outside `units`. Conversion happens only at I/O boundaries (config parsing, output, model adapters).
 - **U-4** β = 1/(k_B T), with T in kelvin and β in Eh⁻¹. Non-positive or non-finite T is an error.
 
