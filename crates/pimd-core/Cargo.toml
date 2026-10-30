@@ -10,3 +10,5 @@ thiserror.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 rand_distr.workspace = true
+# FFT normal-mode transform (RP-4, MILESTONE_4), scalar planner only.
+rustfft.workspace = true

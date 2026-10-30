@@ -43,14 +43,13 @@ impl NeighborList {
     /// Errors with `CoreError::InvalidValue` if C-4 is violated.
     pub fn build(&mut self, positions: &[[f64; 3]], cell: Option<&Cell>) -> Result<(), CoreError> {
         let rl = self.cutoff + self.skin;
-        if let Some(c) = cell {
-            let l_min = c.lengths().into_iter().fold(f64::INFINITY, f64::min);
-            if rl > 0.5 * l_min {
-                return Err(CoreError::InvalidValue {
-                    what: "cutoff + skin (bohr), must be <= L_min/2",
-                    value: rl,
-                });
-            }
+        if let Some(c) = cell
+            && rl > 0.5 * c.min_length()
+        {
+            return Err(CoreError::InvalidValue {
+                what: "cutoff + skin (bohr), must be <= L_min/2",
+                value: rl,
+            });
         }
         let rl2 = rl * rl;
         // O(N²) scan; j ascending, so every list is sorted (N-1).

@@ -36,8 +36,7 @@ impl Rdf {
                 value: 0.0,
             });
         }
-        let l_min = cell.lengths().into_iter().fold(f64::INFINITY, f64::min);
-        if !(r_max.is_finite() && r_max > 0.0 && r_max <= 0.5 * l_min) {
+        if !(r_max.is_finite() && r_max > 0.0 && r_max <= 0.5 * cell.min_length()) {
             return Err(EstimatorError::InvalidValue {
                 what: "RDF r_max (bohr), must be in (0, L_min/2]",
                 value: r_max,
@@ -122,14 +121,23 @@ impl Rdf {
         counts: Vec<f64>,
         n_samples: usize,
     ) -> Result<Rdf, EstimatorError> {
-        let _ = (n_bins, r_max, cell, n_atoms, counts, n_samples);
-        unimplemented!()
+        let mut rdf = Rdf::new(n_bins, r_max, cell, n_atoms)?;
+        if counts.len() != n_bins {
+            return Err(EstimatorError::ShapeMismatch {
+                what: "length of saved RDF counts",
+                expected: n_bins,
+                actual: counts.len(),
+            });
+        }
+        rdf.counts = counts;
+        rdf.n_samples = n_samples;
+        Ok(rdf)
     }
 
     /// Accumulated Σ C_b/P per bin over all samples (E-7), length `n_bins`; saved by checkpoints
     /// together with `n_samples` (Q14).
     pub fn counts(&self) -> &[f64] {
-        unimplemented!()
+        &self.counts
     }
 
     /// Number of configurations accumulated.

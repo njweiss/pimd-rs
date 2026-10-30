@@ -59,7 +59,7 @@ impl Cell {
 
     /// The shortest edge length min(Lx, Ly, Lz), in bohr (L_min of C-4 and E-7).
     pub fn min_length(&self) -> f64 {
-        unimplemented!()
+        self.lengths.into_iter().fold(f64::INFINITY, f64::min)
     }
 
     /// Cell volume Lx·Ly·Lz, in bohr³.
