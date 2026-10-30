@@ -318,6 +318,10 @@ impl RawConfig {
                 ));
             }
         };
+        // E-7 needs N ≥ 2 (N2).
+        if rdf.is_some() && n_atoms < 2 {
+            return Err(invalid("system.n_atoms", n_atoms as f64));
+        }
         let output = OutputConfig {
             rdf,
             checkpoint_every: at_least_one("output.checkpoint_every", out.checkpoint_every)?,

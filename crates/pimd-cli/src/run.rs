@@ -71,8 +71,13 @@ pub fn run(config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
 /// writing the outputs of the continued part into `out_dir`. The result is bitwise identical to
 /// an uninterrupted `run` (D-3).
 ///
-/// Errors: `CliError::Checkpoint` for a corrupt file, a config whose hash differs from the
-/// checkpoint's, or a checkpoint beyond `n_steps`; otherwise as `run`.
+/// Restarting into the directory that holds the earlier run's outputs overwrites its
+/// `observables.csv` and `run.log` (they then cover only the continued part); this is not
+/// prevented (N1).
+///
+/// Errors: `CliError::Checkpoint` for a corrupt file, a config whose hash or RDF settings
+/// (n_bins, r_max) differ from the checkpoint's, or a checkpoint beyond `n_steps`; otherwise as
+/// `run`.
 pub fn run_from_checkpoint(
     config: &Config,
     checkpoint: &Path,
@@ -116,7 +121,7 @@ const OBS_HEADER: &str =
 
 /// Checkpoint magic and format version.
 const MAGIC: &[u8; 8] = b"PIMDCKPT";
-const VERSION: u64 = 1;
+const VERSION: u64 = 2;
 
 /// The initial ring-polymer state (MILESTONE_4 "Initial state"): every bead of atom i at lattice
 /// site i; momenta N(0, m·P/β) per component (RP-3), drawn atom i outer, bead j, dimension d inner.
@@ -287,8 +292,8 @@ impl Driver {
     /// Checkpoint format, all little-endian: magic `PIMDCKPT`, version (u64), config hash (u64),
     /// P, N, production step, recorded steps (u64), Σ E_prim/N, Σ E_vir/N (f64), RNG state length
     /// (u64) and bytes, q, p, forces (P·N·3 f64 each), energies (P f64), RDF flag (u64 0/1) and,
-    /// with an RDF, n_bins, n_samples (u64) and the counts (n_bins f64). Depends only on the state,
-    /// the accumulators and the config hash.
+    /// with an RDF, n_bins (u64), r_max (f64, bohr), n_samples (u64) and the counts (n_bins f64).
+    /// Depends only on the state, the accumulators, the config hash and the RDF settings.
     fn encode(&self, config: &Config) -> Vec<u8> {
         let st = self.sim.state();
         let (p, n) = (st.q.n_beads(), st.q.n_atoms());
@@ -314,16 +319,18 @@ impl Driver {
         for &x in self.sim.energies() {
             u(&mut w, x.to_bits());
         }
-        match &self.rdf {
-            None => u(&mut w, 0),
-            Some(r) => {
+        // `self.rdf` is built from `config.output.rdf`, so both are present or both absent.
+        match (&self.rdf, &config.output.rdf) {
+            (Some(r), Some(rc)) => {
                 u(&mut w, 1);
                 u(&mut w, r.counts().len() as u64);
+                u(&mut w, rc.r_max.to_bits());
                 u(&mut w, r.n_samples() as u64);
                 for &c in r.counts() {
                     u(&mut w, c.to_bits());
                 }
             }
+            _ => u(&mut w, 0),
         }
         w
     }
@@ -333,7 +340,8 @@ impl Driver {
     /// (LJ results do not depend on neighbor-list history).
     ///
     /// Errors: `CliError::Checkpoint` for a malformed file (bad magic or version, wrong length),
-    /// a config-hash mismatch or saved shapes that disagree with `config`.
+    /// a config-hash mismatch, saved shapes or RDF settings that disagree with `config`, or saved
+    /// forces and energies that a re-evaluation does not reproduce.
     fn decode(config: &Config, bytes: &[u8]) -> Result<Driver, CliError> {
         let bad = |msg: &str| CliError::Checkpoint(msg.to_string());
         let mut r = Reader { bytes, pos: 0 };
@@ -374,6 +382,13 @@ impl Driver {
             (0, None) => None,
             (1, Some(rc)) => {
                 let n_bins = r.usize()?;
+                let r_max = r.f64()?;
+                // Q16: `[output]` is outside the config hash, so the RDF settings are checked here.
+                if n_bins != rc.n_bins || r_max.to_bits() != rc.r_max.to_bits() {
+                    return Err(bad(
+                        "RDF settings (n_bins, r_max) differ from the checkpoint's",
+                    ));
+                }
                 let n_samples = r.usize()?;
                 let counts = r.f64s(n_bins)?;
                 Some(
@@ -407,7 +422,8 @@ impl Driver {
         };
         if !same(sim.forces().as_slice(), forces.as_slice()) || !same(sim.energies(), &energies) {
             return Err(bad(
-                "saved forces or energies do not match a re-evaluation at the saved positions",
+                "saved forces or energies do not match a re-evaluation at the saved positions; \
+                 the file is corrupt or was written by a different build or machine",
             ));
         }
         Ok(Driver {
