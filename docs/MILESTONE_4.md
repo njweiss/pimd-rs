@@ -93,7 +93,7 @@ pub fn run_from_checkpoint(config: &Config, checkpoint: &std::path::Path, out_di
     -> Result<RunSummary, CliError>;
 ```
 
-Allowed new dependencies: `serde`, `toml`, `clap` (binary only); `rustfft` in `pimd-core` for the FFT transform, scalar planner only (owner-approved). A fixed, hand-written checkpoint format (little-endian f64/u64, header with magic + version) is preferred over a serialization framework; `serde` is for config only. Test-only: `tempfile`.
+Allowed new dependencies: `serde`, `toml`, `clap` (binary only); `rustfft` in `pimd-core` for the FFT transform, scalar planner only (owner-approved); `matplotlib` in the pixi `ref` environment for `validation/make_plots.py` (owner-approved). A fixed, hand-written checkpoint format (little-endian f64/u64, header with magic + version) is preferred over a serialization framework; `serde` is for config only. Test-only: `tempfile`.
 
 ## Config format (TOML, user units)
 
@@ -145,6 +145,7 @@ Binary (`clap`): `pimd-rs <config.toml> --out <dir> [--restart <checkpoint>]`.
   6. n_side = ⌈N^(1/3)⌉ is computed exactly with integers (N = 27 gives 3).
   7. `rdf_bins` and `rdf_rmax_angstrom` given alone is an error; a two-value `box_angstrom` is an error.
   8. `run` creates `out_dir` if it does not exist.
+- **After review (Q16–Q18, N1, N2, N5):** the checkpoint stores the RDF's n_bins and r_max and a restart with different RDF settings is `CliError::Checkpoint` (Q16). No overflow checks on n_atoms / n_beads (Q17, declined by the owner). On restart the driver re-evaluates the saved positions and requires bitwise-equal forces and energies (kept for M4; to be revisited before M5, Q18); the error message says the file is corrupt or was written by a different build or machine (N5). With an RDF configured, n_atoms = 1 is `InvalidValue { what: "system.n_atoms" }` at parse time (N2). Restarting into the directory that holds the earlier run's outputs overwrites its `observables.csv` and `run.log`; this is documented on `run_from_checkpoint` and in the binary's help, not prevented (N1).
 - **meV columns (Q13):** converted with `units::HARTREE_IN_EV` × 1000.
 - **RDF in checkpoints (Q14):** the driver saves `Rdf::counts()` and `n_samples()` and restores with `Rdf::from_parts`; there is no second E-7 histogram in `pimd-cli`.
 - **`Cell::min_length()` (owner-approved after M3):** new public method returning the shortest cell edge (bohr); replaces the three copies of the L_min fold in `NeighborList::build`, `Rdf::new` and `LennardJones::evaluate`. Bit-identical.
