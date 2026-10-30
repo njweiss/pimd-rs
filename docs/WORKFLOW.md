@@ -37,7 +37,7 @@ Done by the owner with Claude, before M1. Creates:
 
 ### Long validation
 
-Long statistical runs are ordinary integration tests gated by the Cargo feature `long-validation` (declared in every crate that has them), never `#[ignore]`. `scripts/check.sh` skips them by default; `CHECK_LONG=1 ./scripts/check.sh` (or `pixi run test-validation`) runs them in release mode together with `validation/verify_reference_data.py`, which regenerates reference data into a temporary directory and compares it with the committed JSON. It runs every `crates/*/tests/data/gen_*.py --out <tmpdir>` (generators must accept `--out`); keys and list lengths must match, numbers within rtol 1e-9 / atol 1e-12, other values exactly; the top-level `versions` block is reported, not compared.
+Long statistical runs are ordinary integration tests gated by the Cargo feature `long-validation` (declared in every crate that has them), never `#[ignore]`. `scripts/check.sh` skips them by default; `CHECK_LONG=1 ./scripts/check.sh` (or `pixi run test-validation`) runs them in release mode together with `validation/verify_reference_data.py`, which regenerates reference data into a temporary directory and compares it with the committed JSON. It runs every `crates/*/tests/data/gen_*.py --out <tmpdir>` (generators must accept `--out`); keys and list lengths must match, numbers within rtol 1e-9 / atol 1e-12, other values exactly; the top-level `versions` block is reported, not compared. Generators listed as slow in the script (currently `gen_ipi_neon.py`, about 34 min) run only when `CHECK_IPI=1` is also set; they are still locked like all reference data.
 
 ### Mandatory physics-bug mutants
 

@@ -23,6 +23,7 @@ Rust path-integral MD engine with a model-agnostic MLIP hook. This file is the s
 ```bash
 ./scripts/check.sh              # the pass/fail gate (fmt, clippy, tests at 1 and 4 threads, test lock)
 CHECK_LONG=1 ./scripts/check.sh # adds long validation (feature `long-validation`) and reference-data checks
+CHECK_LONG=1 CHECK_IPI=1 ./scripts/check.sh # also regenerates the i-PI reference (~34 min); before merging
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all

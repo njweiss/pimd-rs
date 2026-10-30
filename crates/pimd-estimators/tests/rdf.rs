@@ -266,3 +266,60 @@ fn zero_beads_is_rejected() {
     assert_eq!(rdf.g(), fresh.g());
     assert_eq!(rdf.n_samples(), 1);
 }
+
+/// E-7 (Q14): `from_parts(.., counts(), n_samples())` restores an RDF exactly. Three hand
+/// configurations (P = 1, then P = 2, then P = 1, N = 3, L = 10) are accumulated into `a`;
+/// after the first two, `b` is rebuilt from `a`'s parts and both then accumulate the third. `g`,
+/// `counts` and `n_samples` of `a` and `b` are bitwise equal at both points. `counts` has length
+/// `n_bins` and is all zeros on a fresh RDF.
+#[test]
+fn from_parts_restores_exactly() {
+    let cell = Cell::new([10.0; 3]).unwrap();
+    let c1 = conf(&[vec![[0.5; 3], [2.0, 0.5, 0.5], [0.5, 0.5, 9.6]]]);
+    let c2 = conf(&[
+        vec![[0.5; 3], [3.0, 0.5, 0.5], [5.4, 5.4, 0.5]],
+        vec![[1.0; 3], [1.7, 1.0, 1.0], [1.0, 4.3, 1.0]],
+    ]);
+    let c3 = conf(&[vec![[9.9, 0.1, 0.1], [0.3, 0.1, 0.1], [4.0, 4.0, 4.0]]]);
+    let mut a = Rdf::new(5, 5.0, cell, 3).unwrap();
+    assert_eq!(a.counts(), &[0.0; 5]);
+    a.accumulate(&c1).unwrap();
+    a.accumulate(&c2).unwrap();
+    let mut b = Rdf::from_parts(5, 5.0, cell, 3, a.counts().to_vec(), a.n_samples()).unwrap();
+    let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    assert_eq!(bits(&b.g()), bits(&a.g()));
+    assert_eq!(bits(b.counts()), bits(a.counts()));
+    assert_eq!(b.n_samples(), 2);
+    a.accumulate(&c3).unwrap();
+    b.accumulate(&c3).unwrap();
+    assert_eq!(bits(&b.g()), bits(&a.g()));
+    assert_eq!(bits(b.counts()), bits(a.counts()));
+    assert_eq!(b.n_samples(), 3);
+    assert!(a.counts().iter().any(|&c| c > 0.0));
+}
+
+/// E-7 (Q14): `from_parts` validates like `new` (`InvalidValue` for 0 bins, r_max > L_min/2, fewer
+/// than 2 atoms) and rejects `counts` of the wrong length with `ShapeMismatch`.
+#[test]
+fn from_parts_validates() {
+    let cell = Cell::new([10.0, 8.0, 12.0]).unwrap();
+    let ok = |n| vec![0.0; n];
+    for r in [
+        Rdf::from_parts(0, 2.0, cell, 4, ok(0), 0),
+        Rdf::from_parts(4, 4.5, cell, 4, ok(4), 0),
+        Rdf::from_parts(4, 2.0, cell, 1, ok(4), 0),
+    ] {
+        assert!(
+            matches!(r, Err(EstimatorError::InvalidValue { .. })),
+            "{r:?}"
+        );
+    }
+    for n in [3, 5] {
+        let r = Rdf::from_parts(4, 2.0, cell, 4, ok(n), 1);
+        assert!(
+            matches!(r, Err(EstimatorError::ShapeMismatch { .. })),
+            "{n} counts: {r:?}"
+        );
+    }
+    assert!(Rdf::from_parts(4, 4.0, cell, 4, ok(4), 0).is_ok());
+}

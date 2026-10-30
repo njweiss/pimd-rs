@@ -6,17 +6,20 @@ Run from the repository root (CHECK_LONG=1 scripts/check.sh does this):
 
 Each crates/*/tests/data/gen_*.py is run with `--out <tmpdir>`. Every JSON file it writes must exist
 next to the generator and match it: same keys and list lengths, numbers within rtol 1e-9 / atol 1e-12,
-other values exactly. The top-level "versions" block is reported, not compared.
+other values exactly. The top-level "versions" block is reported, not compared. Generators in SLOW
+(the i-PI run, about 34 min) are skipped unless CHECK_IPI=1.
 """
 
 import json
 import math
+import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 RTOL, ATOL = 1e-9, 1e-12
+SLOW = {"gen_ipi_neon.py"}
 
 
 def compare(new, old, path, errors):
@@ -41,8 +44,13 @@ def main():
     root = Path(__file__).resolve().parent.parent
     generators = sorted(root.glob("crates/*/tests/data/gen_*.py"))
     failed = False
+    skipped = 0
     for gen in generators:
         rel = gen.relative_to(root)
+        if gen.name in SLOW and os.environ.get("CHECK_IPI") != "1":
+            print(f"skip {rel}: slow generator, set CHECK_IPI=1 to run it")
+            skipped += 1
+            continue
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run([sys.executable, str(gen), "--out", tmp], check=True, cwd=root)
             outputs = sorted(Path(tmp).glob("*.json"))
@@ -67,7 +75,7 @@ def main():
                 for e in errors:
                     print(f"     {e}")
                 failed |= bool(errors)
-    print(f"{len(generators)} generator(s) checked")
+    print(f"{len(generators) - skipped} generator(s) checked, {skipped} skipped")
     sys.exit(1 if failed else 0)
 
 
