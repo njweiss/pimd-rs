@@ -286,3 +286,28 @@ fn corrupt_checkpoint_rejected() {
         }
     }
 }
+
+/// Restart determinism, E-7 (Q16): the RDF settings are part of the checkpoint contract although
+/// `[output]` is outside the config hash. A checkpoint written with rdf_bins = 20 and
+/// rdf_rmax_angstrom = 6.0 does not restart with r_max 5.9 or 3.0 (same bin count) or with 10
+/// bins (`CliError::Checkpoint`), while the unchanged settings restart (covered above).
+#[test]
+fn rdf_settings_must_match_checkpoint() {
+    let d = tmp();
+    pool(1).install(|| run(&with_steps(10), d.path()).unwrap());
+    let ck = d.path().join("checkpoint.bin");
+    let base40 = set(BASE, "sampling", "n_steps", "40");
+    for (key, value) in [
+        ("rdf_rmax_angstrom", "5.9"),
+        ("rdf_rmax_angstrom", "3.0"),
+        ("rdf_bins", "10"),
+    ] {
+        let cfg = parse(&set(&base40, "output", key, value));
+        let out = tmp();
+        let r = pool(1).install(|| run_from_checkpoint(&cfg, &ck, out.path()));
+        match r {
+            Err(CliError::Checkpoint(_)) => {}
+            other => panic!("output.{key} = {value}: expected Checkpoint error, got {other:?}"),
+        }
+    }
+}

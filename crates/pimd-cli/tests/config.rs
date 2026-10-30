@@ -289,3 +289,17 @@ fn errors_are_distinct() {
         }
     }
 }
+
+/// E-7 (N ≥ 2), "Config format" (N2 after review): with an RDF configured, n_atoms = 1 is
+/// rejected at parse time as `InvalidValue` naming `system.n_atoms`; without the RDF keys a
+/// single atom is accepted.
+#[test]
+fn single_atom_with_rdf_rejected() {
+    let one = set(BASE, "system", "n_atoms", "1");
+    invalid(&one, "system.n_atoms");
+    let no_rdf = remove(&remove(&one, "rdf_bins"), "rdf_rmax_angstrom");
+    assert!(
+        Config::from_toml_str(&no_rdf).is_ok(),
+        "one atom without RDF must be accepted"
+    );
+}
