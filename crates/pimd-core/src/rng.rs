@@ -79,7 +79,7 @@ impl RngState {
         out
     }
 
-    /// Inverse of `to_bytes`. Errors (a `CoreError`) on bytes that are not a valid encoding.
+    /// Inverse of `to_bytes`.
     ///
     /// Errors: `CoreError::ShapeMismatch` unless `bytes` has the fixed encoded length;
     /// `CoreError::InvalidValue` if the word position is outside ChaCha's 68-bit range.
