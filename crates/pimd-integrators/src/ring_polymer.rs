@@ -290,14 +290,31 @@ impl RingPolymerSim {
     /// `state`, the integrator's P, `forces` or `energies` disagree in size;
     /// `IntegratorError::InvalidValue` if a mass is not positive and finite.
     pub fn from_parts(
-        _state: RingState,
-        _cell: Option<Cell>,
-        _integrator: RingPolymerIntegrator,
-        _potential: Box<dyn Potential>,
-        _forces: Beads,
-        _energies: Vec<f64>,
+        state: RingState,
+        cell: Option<Cell>,
+        integrator: RingPolymerIntegrator,
+        potential: Box<dyn Potential>,
+        forces: Beads,
+        energies: Vec<f64>,
     ) -> Result<Self, IntegratorError> {
-        unimplemented!("M5: RingPolymerSim::from_parts")
+        integrator.check_shape(&state)?;
+        let (p, n) = (state.q.n_beads(), state.q.n_atoms());
+        for &m in &state.masses {
+            positive_finite("mass (m_e)", m)?;
+        }
+        check_sizes(&[
+            ("bead count of given forces", p, forces.n_beads()),
+            ("atom count of given forces", n, forces.n_atoms()),
+            ("number of given energies", p, energies.len()),
+        ])?;
+        Ok(RingPolymerSim {
+            state,
+            forces,
+            energies,
+            integrator,
+            potential,
+            cell,
+        })
     }
 
     /// One step B(dt/2) A(dt/2) O(dt) A(dt/2) B(dt/2) (I-1), with exactly one `evaluate` (I-3).
