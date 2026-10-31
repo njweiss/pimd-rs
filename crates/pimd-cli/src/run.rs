@@ -13,7 +13,7 @@ use pimd_integrators::{RingPolymerIntegrator, RingPolymerSim, RingState, Thermos
 use pimd_potentials::{LennardJones, Potential};
 use pimd_socket::SocketPotential;
 
-use crate::config::{Config, PotentialConfig, put_u64};
+use crate::config::{Config, GAS_PHASE_NEEDS_POSITIONS, PotentialConfig, invalid, put_u64};
 use crate::error::CliError;
 
 /// Results of a run (or of the run continued by `run_from_checkpoint`).
@@ -137,16 +137,15 @@ fn initial_state(config: &Config, rng: &mut Rng) -> Result<RingState, CliError> 
     let n = config.system.n_atoms;
     let p = config.sampling.n_beads;
     let masses = config.system.masses.clone();
-    let sites = match (&config.system.positions, config.system.cell) {
-        (Some(x), _) => x.clone(),
-        (None, Some(cell)) => lattice(n, cell.lengths()),
-        // Rejected by `Config::from_toml_str` (C-1: the gas phase needs positions).
-        (None, None) => {
-            return Err(CliError::Parse(
-                "system: `positions_angstrom` is required without `box_angstrom` (gas phase)"
-                    .to_string(),
-            ));
+    let lattice_sites;
+    let sites: &[[f64; 3]] = match (&config.system.positions, config.system.cell) {
+        (Some(x), _) => x,
+        (None, Some(cell)) => {
+            lattice_sites = lattice(n, cell.lengths());
+            &lattice_sites
         }
+        // Rejected by `Config::from_toml_str`; reachable only with a hand-built `Config`.
+        (None, None) => return Err(CliError::Parse(GAS_PHASE_NEEDS_POSITIONS.to_string())),
     };
     let mut q = Beads::zeros(p, n);
     let mut mom = Beads::zeros(p, n);
@@ -202,11 +201,8 @@ fn potential(config: &Config) -> Result<Box<dyn Potential>, CliError> {
             n_clients,
             timeout_s,
         } => {
-            let timeout =
-                Duration::try_from_secs_f64(*timeout_s).map_err(|_| CliError::InvalidValue {
-                    what: "potential.timeout_s".to_string(),
-                    value: *timeout_s,
-                })?;
+            let timeout = Duration::try_from_secs_f64(*timeout_s)
+                .map_err(|_| invalid("potential.timeout_s", *timeout_s))?;
             Box::new(SocketPotential::bind_and_accept(
                 address,
                 config.system.n_atoms,
@@ -243,17 +239,19 @@ impl Driver {
         let s = &config.sampling;
         let mut obs = BufWriter::new(fs::File::create(out_dir.join("observables.csv"))?);
         writeln!(obs, "{OBS_HEADER}")?;
+        // (trajectory_every, writer)
         let mut traj = match config.output.trajectory_every {
-            Some(_) => Some(BufWriter::new(fs::File::create(
-                out_dir.join("trajectory.xyz"),
-            )?)),
+            Some(t) => Some((
+                t,
+                BufWriter::new(fs::File::create(out_dir.join("trajectory.xyz"))?),
+            )),
             None => None,
         };
         while self.step < s.n_steps {
             self.sim.step(&mut self.rng)?;
             self.step += 1;
-            if let (Some(t), Some(f)) = (config.output.trajectory_every, traj.as_mut())
-                && self.step.is_multiple_of(t)
+            if let Some((t, f)) = traj.as_mut()
+                && self.step.is_multiple_of(*t)
             {
                 self.write_frame(config, f)?;
             }
@@ -262,14 +260,14 @@ impl Driver {
             }
             if self.step.is_multiple_of(config.output.checkpoint_every) && self.step < s.n_steps {
                 obs.flush()?;
-                if let Some(f) = traj.as_mut() {
+                if let Some((_, f)) = traj.as_mut() {
                     f.flush()?;
                 }
                 self.write_checkpoint(config, out_dir)?;
             }
         }
         obs.flush()?;
-        if let Some(f) = traj.as_mut() {
+        if let Some((_, f)) = traj.as_mut() {
             f.flush()?;
         }
         self.write_checkpoint(config, out_dir)?;
@@ -299,13 +297,10 @@ impl Driver {
         let (p, n) = (q.n_beads(), q.n_atoms());
         writeln!(f, "{}", p * n)?;
         writeln!(f, "step={} beads={p} atoms={n} units=angstrom", self.step)?;
+        let symbols = config.system.symbols.as_deref();
         for j in 0..p {
             for i in 0..n {
-                let sym = config
-                    .system
-                    .symbols
-                    .as_ref()
-                    .map_or("X", |v| v[i].as_str());
+                let sym = symbols.map_or("X", |v| v[i].as_str());
                 let x = q.get(j, i).map(|c| c * BOHR_IN_ANGSTROM);
                 writeln!(f, "{sym} {} {} {}", x[0], x[1], x[2])?;
             }
@@ -418,7 +413,8 @@ impl Driver {
     ///
     /// Errors: `CliError::Checkpoint` for a malformed file (bad magic or version, wrong length),
     /// a config-hash mismatch, or saved shapes or RDF settings that disagree with `config`;
-    /// otherwise errors of building the potential.
+    /// `CliError::Integrator` from `RingPolymerSim::from_parts` (e.g. non-finite saved forces or
+    /// energies, Q23); otherwise errors of building the potential.
     fn decode(config: &Config, bytes: &[u8]) -> Result<Driver, CliError> {
         let bad = |msg: &str| CliError::Checkpoint(msg.to_string());
         let mut r = Reader { bytes, pos: 0 };

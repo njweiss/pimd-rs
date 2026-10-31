@@ -193,7 +193,7 @@ impl SocketPotential {
         let deadline = Instant::now() + timeout;
         let bind_err =
             |e: std::io::Error| PotentialError::Backend(format!("binding {address:?}: {e}"));
-        match address {
+        let (accepted, socket_file) = match address {
             Address::Unix(path) => {
                 let listener = UnixListener::bind(path).map_err(bind_err)?;
                 let accepted = listener
@@ -204,31 +204,34 @@ impl SocketPotential {
                             nonblocking(listener.accept()).map(|o| o.map(|(s, _)| Stream::Unix(s)))
                         })
                     });
-                match accepted {
-                    Ok(clients) => Ok(SocketPotential {
-                        clients,
-                        n_atoms,
-                        timeout,
-                        socket_file: Some(path.clone()),
-                    }),
-                    Err(e) => {
-                        std::fs::remove_file(path).ok();
-                        Err(e)
-                    }
-                }
+                (accepted, Some(path.clone()))
             }
             Address::Tcp(addr) => {
                 let listener = TcpListener::bind(addr.as_str()).map_err(bind_err)?;
-                listener.set_nonblocking(true).map_err(bind_err)?;
-                let clients = accept_all(n_clients, deadline, timeout, || {
-                    nonblocking(listener.accept()).map(|o| o.map(|(s, _)| Stream::Tcp(s)))
-                })?;
-                Ok(SocketPotential {
-                    clients,
-                    n_atoms,
-                    timeout,
-                    socket_file: None,
-                })
+                let accepted = listener
+                    .set_nonblocking(true)
+                    .map_err(bind_err)
+                    .and_then(|()| {
+                        accept_all(n_clients, deadline, timeout, || {
+                            nonblocking(listener.accept()).map(|o| o.map(|(s, _)| Stream::Tcp(s)))
+                        })
+                    });
+                (accepted, None)
+            }
+        };
+        match accepted {
+            Ok(clients) => Ok(SocketPotential {
+                clients,
+                n_atoms,
+                timeout,
+                socket_file,
+            }),
+            Err(e) => {
+                // Our own Unix socket file, which nothing else will remove.
+                if let Some(path) = &socket_file {
+                    std::fs::remove_file(path).ok();
+                }
+                Err(e)
             }
         }
     }

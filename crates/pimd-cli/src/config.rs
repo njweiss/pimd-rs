@@ -270,13 +270,17 @@ struct RawOutput {
     trajectory_every: Option<usize>,
 }
 
-/// `InvalidValue` naming `field` (`section.key`).
 /// Appends `v` as 8 little-endian bytes (config hash and checkpoint encoding).
 pub(crate) fn put_u64(w: &mut Vec<u8>, v: u64) {
     w.extend_from_slice(&v.to_le_bytes());
 }
 
-fn invalid(field: &str, value: f64) -> CliError {
+/// C-1: the gas phase has no lattice to start from.
+pub(crate) const GAS_PHASE_NEEDS_POSITIONS: &str =
+    "system: `positions_angstrom` is required without `box_angstrom` (gas phase)";
+
+/// `InvalidValue` naming `field` (`section.key`).
+pub(crate) fn invalid(field: &str, value: f64) -> CliError {
     CliError::InvalidValue {
         what: field.to_string(),
         value,
@@ -297,6 +301,11 @@ fn positive(field: &str, v: f64) -> Result<f64, CliError> {
 fn fits_f64s(n: Option<usize>) -> bool {
     n.and_then(|n| n.checked_mul(8))
         .is_some_and(|bytes| bytes <= isize::MAX as usize)
+}
+
+/// `v` if present, else `Parse` naming the missing `key`.
+fn need<T>(v: Option<T>, key: &str) -> Result<T, CliError> {
+    v.ok_or_else(|| CliError::Parse(format!("missing field `{key}`")))
 }
 
 /// `n` if at least 1, else `InvalidValue` naming `field`.
@@ -394,12 +403,8 @@ impl RawConfig {
                 Some(Cell::new(lengths)?)
             }
         };
-        // C-1: without a box there is no lattice to start from.
         if cell.is_none() && positions.is_none() {
-            return Err(CliError::Parse(
-                "system: `positions_angstrom` is required without `box_angstrom` (gas phase)"
-                    .to_string(),
-            ));
+            return Err(CliError::Parse(GAS_PHASE_NEEDS_POSITIONS.to_string()));
         }
 
         let potential = match po.kind {
@@ -410,16 +415,11 @@ impl RawConfig {
                             .to_string(),
                     ));
                 }
-                let need = |v: Option<f64>, key: &str| {
-                    v.ok_or_else(|| CliError::Parse(format!("missing field `{key}`")))
-                };
                 let epsilon_kelvin = need(po.epsilon_kelvin, "epsilon_kelvin")?;
                 let sigma_angstrom = need(po.sigma_angstrom, "sigma_angstrom")?;
                 let cutoff_sigma = need(po.cutoff_sigma, "cutoff_sigma")?;
                 let skin_sigma = need(po.skin_sigma, "skin_sigma")?;
-                let shift = po
-                    .shift
-                    .ok_or_else(|| CliError::Parse("missing field `shift`".to_string()))?;
+                let shift = need(po.shift, "shift")?;
                 let epsilon =
                     positive("potential.epsilon_kelvin", epsilon_kelvin)? * K_B_HARTREE_PER_KELVIN;
                 let sigma =
@@ -454,19 +454,11 @@ impl RawConfig {
                         "potential: Lennard-Jones parameters belong to kind = \"lj\"".to_string(),
                     ));
                 }
-                let address = po
-                    .address
-                    .ok_or_else(|| CliError::Parse("missing field `address`".to_string()))?;
-                let address = address
+                let address = need(po.address, "address")?
                     .parse::<Address>()
                     .map_err(|e| CliError::Parse(format!("potential.address: {e}")))?;
-                let n_clients = po
-                    .n_clients
-                    .ok_or_else(|| CliError::Parse("missing field `n_clients`".to_string()))?;
-                let timeout_s = po
-                    .timeout_s
-                    .ok_or_else(|| CliError::Parse("missing field `timeout_s`".to_string()))?;
-                let timeout_s = positive("potential.timeout_s", timeout_s)?;
+                let n_clients = need(po.n_clients, "n_clients")?;
+                let timeout_s = positive("potential.timeout_s", need(po.timeout_s, "timeout_s")?)?;
                 if timeout_s > 1e9 {
                     return Err(invalid("potential.timeout_s", timeout_s));
                 }

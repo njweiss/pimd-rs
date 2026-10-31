@@ -213,6 +213,19 @@ impl RingPolymerIntegrator {
 
 /// `IntegratorError::ShapeMismatch` unless `ev` has forces of shape `[p, n, 3]` and `p`
 /// energies (P-1).
+/// The construction checks shared by `new` and `from_parts`: shapes of `state` against the
+/// integrator (P-1) and masses positive and finite (S-2). Returns (P, N).
+fn check_state(
+    integrator: &RingPolymerIntegrator,
+    state: &RingState,
+) -> Result<(usize, usize), IntegratorError> {
+    integrator.check_shape(state)?;
+    for &m in &state.masses {
+        positive_finite("mass (m_e)", m)?;
+    }
+    Ok((state.q.n_beads(), state.q.n_atoms()))
+}
+
 pub(crate) fn check_evaluation(ev: &Evaluation, p: usize, n: usize) -> Result<(), IntegratorError> {
     check_sizes(&[
         ("bead count of evaluated forces", p, ev.forces.n_beads()),
@@ -265,11 +278,7 @@ impl RingPolymerSim {
         integrator: RingPolymerIntegrator,
         mut potential: Box<dyn Potential>,
     ) -> Result<Self, IntegratorError> {
-        integrator.check_shape(&state)?;
-        let (p, n) = (state.q.n_beads(), state.q.n_atoms());
-        for &m in &state.masses {
-            positive_finite("mass (m_e)", m)?;
-        }
+        let (p, n) = check_state(&integrator, &state)?;
         let ev = potential.evaluate(&state.q, cell.as_ref(), None)?;
         check_evaluation(&ev, p, n)?;
         Ok(RingPolymerSim {
@@ -298,11 +307,7 @@ impl RingPolymerSim {
         forces: Beads,
         energies: Vec<f64>,
     ) -> Result<Self, IntegratorError> {
-        integrator.check_shape(&state)?;
-        let (p, n) = (state.q.n_beads(), state.q.n_atoms());
-        for &m in &state.masses {
-            positive_finite("mass (m_e)", m)?;
-        }
+        let (p, n) = check_state(&integrator, &state)?;
         check_sizes(&[
             ("bead count of given forces", p, forces.n_beads()),
             ("atom count of given forces", n, forces.n_atoms()),
