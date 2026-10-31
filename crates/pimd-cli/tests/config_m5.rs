@@ -310,3 +310,79 @@ fn socket_section_parse_errors() {
         assert!(matches!(err(&t), CliError::Parse(_)), "{t}");
     }
 }
+
+/// Q20 (M5 review): `timeout_s` is at most 1e9 s; above that (where a deadline can overflow the
+/// clock and panic) it is `InvalidValue { what: "potential.timeout_s" }`, checked at parse time.
+#[test]
+fn timeout_s_bounded() {
+    for v in ["1e9", "1.0", "1e-3"] {
+        let c = parse(&set(&water(), "potential", "timeout_s", v));
+        match c.potential {
+            PotentialConfig::Socket { timeout_s, .. } => {
+                assert_eq!(timeout_s, v.parse::<f64>().unwrap())
+            }
+            other => panic!("expected a socket potential, got {other:?}"),
+        }
+    }
+    for v in ["1.0000001e9", "1e10", "1e19", "1.7e308"] {
+        invalid(
+            &set(&water(), "potential", "timeout_s", v),
+            "potential.timeout_s",
+        );
+    }
+}
+
+/// Q22 (M5 review): every `symbols` entry is non-empty and has no whitespace (it is one field of an
+/// xyz line), else `InvalidValue { what: "system.symbols" }`.
+#[test]
+fn symbols_validated() {
+    for v in [
+        r#"["", "H", "H"]"#,
+        r#"["O H", "H", "H"]"#,
+        r#"["O", "H\n", "H"]"#,
+        r#"["O", "H", "\tH"]"#,
+        "[\"O\", \"H\", \"H\u{a0}\"]",
+    ] {
+        invalid(&set(&water(), "system", "symbols", v), "system.symbols");
+    }
+    let c = parse(&set(&water(), "system", "symbols", r#"["O", "H1", "Hé"]"#));
+    assert_eq!(
+        c.system.symbols,
+        Some(vec!["O".to_string(), "H1".to_string(), "Hé".to_string()])
+    );
+}
+
+/// Q17 (amended in M5): sizes that cannot be allocated are `InvalidValue` at parse time instead of
+/// a capacity panic: N·3·8 bytes over `isize::MAX` names `system.n_atoms`; P²·8 bytes (the P×P
+/// normal-mode matrix) names `sampling.n_beads`; otherwise P·N·3·8 bytes over `isize::MAX` names
+/// `system.n_atoms`. The checks come before any allocation of that size (with `mass_amu`, the
+/// per-atom mass vector would otherwise be allocated first). P = 2^30 − 1 is the largest accepted
+/// bead count (parse only; nothing of size P² is allocated at parse time).
+#[test]
+fn unallocatable_sizes_rejected() {
+    let isize_max = i64::MAX as u128; // isize::MAX on 64-bit
+    let n_limit = isize_max / 24; // largest N with N·3·8 ≤ isize::MAX
+    assert_eq!(n_limit * 24 <= isize_max, (n_limit + 1) * 24 > isize_max);
+    for n in [n_limit + 1, 1u128 << 62, i64::MAX as u128] {
+        invalid(
+            &set(BASE, "system", "n_atoms", &n.to_string()),
+            "system.n_atoms",
+        );
+    }
+    let p_max: u128 = (1 << 30) - 1;
+    assert!(p_max * p_max * 8 <= isize_max && (p_max + 1) * (p_max + 1) * 8 > isize_max);
+    for p in [p_max + 1, 1u128 << 32, i64::MAX as u128] {
+        invalid(
+            &set(BASE, "sampling", "n_beads", &p.to_string()),
+            "sampling.n_beads",
+        );
+    }
+    let c = parse(&set(BASE, "sampling", "n_beads", &p_max.to_string()));
+    assert_eq!(c.sampling.n_beads as u128, p_max);
+    // Neither alone is too large, the product is: P = 2^25, N = 2^40 → P·N·24 = 3·2^68 bytes.
+    let t = set(BASE, "system", "n_atoms", &(1u64 << 40).to_string());
+    invalid(
+        &set(&t, "sampling", "n_beads", &(1u64 << 25).to_string()),
+        "system.n_atoms",
+    );
+}
