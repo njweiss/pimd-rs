@@ -40,7 +40,8 @@ pub struct SystemConfig {
     /// Initial position of each atom, length N, bohr (from `positions_angstrom`); `None` = the
     /// M4 lattice (requires a cell).
     pub positions: Option<Vec<[f64; 3]>>,
-    /// Element symbol of each atom, length N, for output only (`symbols`).
+    /// Element symbol of each atom, length N, each non-empty without whitespace, for output only
+    /// (`symbols`).
     pub symbols: Option<Vec<String>>,
 }
 
@@ -50,13 +51,13 @@ pub enum PotentialConfig {
     /// `kind = "lj"`: ε in Eh, σ, cutoff and skin in bohr, shift flag (P-3).
     Lj(LjParams),
     /// `kind = "socket"`: an i-PI protocol server (K-1) at `address` serving `n_clients ≥ 1`
-    /// clients, with `timeout_s > 0` seconds for accepting them and for every read and write.
+    /// clients, with `0 < timeout_s ≤ 1e9` seconds for accepting them and for every read and write.
     Socket {
         /// Where the server listens.
         address: Address,
         /// Number of clients to wait for.
         n_clients: usize,
-        /// Accept, read and write timeout, s.
+        /// Accept, read and write timeout, s, in (0, 1e9].
         timeout_s: f64,
     },
 }
@@ -291,6 +292,13 @@ fn positive(field: &str, v: f64) -> Result<f64, CliError> {
     }
 }
 
+/// Whether `n` f64 values fit in one allocation (`n · 8` bytes at most `isize::MAX`), with
+/// checked arithmetic (Q17).
+fn fits_f64s(n: Option<usize>) -> bool {
+    n.and_then(|n| n.checked_mul(8))
+        .is_some_and(|bytes| bytes <= isize::MAX as usize)
+}
+
 /// `n` if at least 1, else `InvalidValue` naming `field`.
 fn at_least_one(field: &str, n: usize) -> Result<usize, CliError> {
     if n >= 1 {
@@ -311,6 +319,17 @@ impl RawConfig {
         } = self;
 
         let n_atoms = at_least_one("system.n_atoms", sy.n_atoms)?;
+        let n_beads = at_least_one("sampling.n_beads", sa.n_beads)?;
+        // Q17: sizes that cannot be allocated, checked before anything of that size is.
+        if !fits_f64s(n_atoms.checked_mul(3)) {
+            return Err(invalid("system.n_atoms", n_atoms as f64));
+        }
+        if !fits_f64s(n_beads.checked_mul(n_beads)) {
+            return Err(invalid("sampling.n_beads", n_beads as f64));
+        }
+        if !fits_f64s(n_beads.checked_mul(n_atoms).and_then(|n| n.checked_mul(3))) {
+            return Err(invalid("system.n_atoms", n_atoms as f64));
+        }
         let masses = match (sy.mass_amu, sy.masses_amu) {
             (Some(m), None) => {
                 vec![positive("system.mass_amu", m)? * AMU_IN_ELECTRON_MASSES; n_atoms]
@@ -329,10 +348,16 @@ impl RawConfig {
                 ));
             }
         };
-        if let Some(v) = &sy.symbols
-            && v.len() != n_atoms
-        {
-            return Err(invalid("system.symbols", v.len() as f64));
+        if let Some(v) = &sy.symbols {
+            if v.len() != n_atoms {
+                return Err(invalid("system.symbols", v.len() as f64));
+            }
+            if let Some(i) = v
+                .iter()
+                .position(|s| s.is_empty() || s.chars().any(char::is_whitespace))
+            {
+                return Err(invalid("system.symbols", i as f64));
+            }
         }
         let positions = match sy.positions_angstrom {
             None => None,
@@ -441,10 +466,14 @@ impl RawConfig {
                 let timeout_s = po
                     .timeout_s
                     .ok_or_else(|| CliError::Parse("missing field `timeout_s`".to_string()))?;
+                let timeout_s = positive("potential.timeout_s", timeout_s)?;
+                if timeout_s > 1e9 {
+                    return Err(invalid("potential.timeout_s", timeout_s));
+                }
                 PotentialConfig::Socket {
                     address,
                     n_clients: at_least_one("potential.n_clients", n_clients)?,
-                    timeout_s: positive("potential.timeout_s", timeout_s)?,
+                    timeout_s,
                 }
             }
         };
@@ -453,7 +482,7 @@ impl RawConfig {
         let sampling = SamplingConfig {
             temperature_kelvin,
             beta: beta_from_kelvin(temperature_kelvin)?,
-            n_beads: at_least_one("sampling.n_beads", sa.n_beads)?,
+            n_beads,
             dt: positive("sampling.dt_fs", sa.dt_fs)? * FS_IN_ATOMIC_TIME,
             tau0: positive("sampling.tau0_fs", sa.tau0_fs)? * FS_IN_ATOMIC_TIME,
             n_equil: sa.n_equil,
