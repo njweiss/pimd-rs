@@ -296,6 +296,7 @@ dependencies = [
  "pimd-estimators",
  "pimd-integrators",
  "pimd-potentials",
+ "pimd-socket",
  "rayon",
  "serde",
  "tempfile",
@@ -341,6 +342,17 @@ dependencies = [
  "pimd-core",
  "rayon",
  "thiserror",
+]
+
+[[package]]
+name = "pimd-socket"
+version = "0.1.0"
+dependencies = [
+ "pimd-core",
+ "pimd-integrators",
+ "pimd-potentials",
+ "rayon",
+ "tempfile",
 ]
 
 [[package]]

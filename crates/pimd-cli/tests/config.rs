@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{BASE, parse, remove, set};
+use common::{BASE, cell_of, lj_params, parse, remove, set};
 use pimd_cli::{CliError, Config};
 use pimd_core::normal_modes::Transform;
 
@@ -47,16 +47,20 @@ fn invalid(toml: &str, field: &str) -> f64 {
 fn full_config_parses_with_hand_conversions() {
     let c = parse(BASE);
     assert_eq!(c.system.n_atoms, 32);
-    close(c.system.mass, 20.1797 * AMU, "mass");
-    for l in c.system.cell.lengths() {
+    assert_eq!(c.system.masses.len(), 32);
+    for &m in &c.system.masses {
+        close(m, 20.1797 * AMU, "mass");
+    }
+    for l in cell_of(&c).lengths() {
         close(l, 12.5 / BOHR_A, "box length");
     }
     let sigma = 2.749 / BOHR_A;
-    close(c.potential.epsilon, 35.6 * K_B, "epsilon");
-    close(c.potential.sigma, sigma, "sigma");
-    close(c.potential.cutoff, 2.0 * sigma, "cutoff");
-    close(c.potential.skin, 0.25 * sigma, "skin");
-    assert!(c.potential.shift);
+    let lj = lj_params(&c);
+    close(lj.epsilon, 35.6 * K_B, "epsilon");
+    close(lj.sigma, sigma, "sigma");
+    close(lj.cutoff, 2.0 * sigma, "cutoff");
+    close(lj.skin, 0.25 * sigma, "skin");
+    assert!(lj.shift);
     let s = &c.sampling;
     assert_eq!(s.temperature_kelvin, 30.0);
     close(s.beta, 1.0 / (30.0 * K_B), "beta");
@@ -106,7 +110,7 @@ checkpoint_every = 1000
     assert_eq!(c.system.n_atoms, 108);
     assert_eq!(c.sampling.n_beads, 16);
     assert_eq!(c.sampling.n_steps, 20000);
-    close(c.potential.cutoff, 2.5 * 2.749 / BOHR_A, "cutoff");
+    close(lj_params(&c).cutoff, 2.5 * 2.749 / BOHR_A, "cutoff");
     assert_eq!(c.output.rdf.as_ref().unwrap().n_bins, 100);
 }
 
@@ -129,7 +133,7 @@ fn normal_modes_setting() {
 #[test]
 fn box_one_or_three_values() {
     let c = parse(&set(BASE, "system", "box_angstrom", "[12.5, 13.0, 14.0]"));
-    let l = c.system.cell.lengths();
+    let l = cell_of(&c).lengths();
     close(l[0], 12.5 / BOHR_A, "Lx");
     close(l[1], 13.0 / BOHR_A, "Ly");
     close(l[2], 14.0 / BOHR_A, "Lz");
@@ -148,13 +152,13 @@ fn rdf_keys_optional_together() {
     assert!(Config::from_toml_str(&remove(BASE, "rdf_rmax_angstrom")).is_err());
 }
 
-/// "Required tests: Config": every required field, when missing, is a `Parse` error.
+/// "Required tests: Config": every required field, when missing, is a `Parse` error. (M5:
+/// `mass_amu` and `box_angstrom` are no longer unconditionally required, MILESTONE_5 "Config
+/// format"; their missing cases are covered in `config_m5.rs`.)
 #[test]
 fn missing_fields_are_parse_errors() {
     for key in [
         "n_atoms",
-        "mass_amu",
-        "box_angstrom",
         "kind",
         "epsilon_kelvin",
         "sigma_angstrom",

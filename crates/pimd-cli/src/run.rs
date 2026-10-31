@@ -11,7 +11,7 @@ use pimd_estimators::{Rdf, potential_mean, total_primitive, total_virial};
 use pimd_integrators::{RingPolymerIntegrator, RingPolymerSim, RingState, Thermostat};
 use pimd_potentials::LennardJones;
 
-use crate::config::{Config, put_u64};
+use crate::config::{Config, PotentialConfig, put_u64};
 use crate::error::CliError;
 
 /// Results of a run (or of the run continued by `run_from_checkpoint`).
@@ -43,7 +43,14 @@ pub fn run(config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
         .output
         .rdf
         .as_ref()
-        .map(|r| Rdf::new(r.n_bins, r.r_max, config.system.cell, config.system.n_atoms))
+        .map(|r| {
+            Rdf::new(
+                r.n_bins,
+                r.r_max,
+                periodic_cell(config),
+                config.system.n_atoms,
+            )
+        })
         .transpose()?;
     let mut d = Driver {
         sim,
@@ -124,12 +131,15 @@ const VERSION: u64 = 2;
 fn initial_state(config: &Config, rng: &mut Rng) -> RingState {
     let n = config.system.n_atoms;
     let p = config.sampling.n_beads;
-    let m = config.system.mass;
-    let sites = lattice(n, config.system.cell.lengths());
+    if config.system.positions.is_some() {
+        unimplemented!("M5: initial positions from the config");
+    }
+    let masses = config.system.masses.clone();
+    let sites = lattice(n, periodic_cell(config).lengths());
     let mut q = Beads::zeros(p, n);
     let mut mom = Beads::zeros(p, n);
-    let sd = (m * p as f64 / config.sampling.beta).sqrt();
     for (i, &site) in sites.iter().enumerate() {
+        let sd = (masses[i] * p as f64 / config.sampling.beta).sqrt();
         for j in 0..p {
             q.set(j, i, site);
             let mut v = [0.0; 3];
@@ -139,10 +149,14 @@ fn initial_state(config: &Config, rng: &mut Rng) -> RingState {
             mom.set(j, i, v);
         }
     }
-    RingState {
-        q,
-        p: mom,
-        masses: vec![m; n],
+    RingState { q, p: mom, masses }
+}
+
+/// The config's periodic cell (M5 stub: the gas phase is not implemented yet).
+fn periodic_cell(config: &Config) -> pimd_core::Cell {
+    match config.system.cell {
+        Some(c) => c,
+        None => unimplemented!("M5: gas phase"),
     }
 }
 
@@ -172,10 +186,13 @@ fn new_sim(config: &Config, state: RingState) -> Result<RingPolymerSim, CliError
         Thermostat::PileL { tau0: Some(s.tau0) },
         s.normal_modes,
     )?;
-    let pot = LennardJones::new(config.potential)?;
+    let pot = match &config.potential {
+        PotentialConfig::Lj(lj) => LennardJones::new(*lj)?,
+        PotentialConfig::Socket { .. } => unimplemented!("M5: socket potential in the driver"),
+    };
     Ok(RingPolymerSim::new(
         state,
-        Some(config.system.cell),
+        Some(periodic_cell(config)),
         ig,
         Box::new(pot),
     )?)
@@ -204,6 +221,9 @@ impl Driver {
     /// the step; checkpoints every `checkpoint_every` steps and at the end.
     fn production(mut self, config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
         let s = &config.sampling;
+        if config.output.trajectory_every.is_some() {
+            unimplemented!("M5: trajectory output");
+        }
         let mut obs = BufWriter::new(fs::File::create(out_dir.join("observables.csv"))?);
         writeln!(obs, "{OBS_HEADER}")?;
         while self.step < s.n_steps {
@@ -395,7 +415,7 @@ impl Driver {
                     Rdf::from_parts(
                         rc.n_bins,
                         rc.r_max,
-                        config.system.cell,
+                        periodic_cell(config),
                         n,
                         counts,
                         n_samples,
@@ -412,7 +432,7 @@ impl Driver {
         let state = RingState {
             q,
             p: mom,
-            masses: vec![config.system.mass; n],
+            masses: config.system.masses.clone(),
         };
         let sim = new_sim(config, state)?;
         let same = |a: &[f64], b: &[f64]| {

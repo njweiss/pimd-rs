@@ -7,7 +7,7 @@ Run from the repository root (CHECK_LONG=1 scripts/check.sh does this):
 Each crates/*/tests/data/gen_*.py is run with `--out <tmpdir>`. Every JSON file it writes must exist
 next to the generator and match it: same keys and list lengths, numbers within rtol 1e-9 / atol 1e-12,
 other values exactly. The top-level "versions" block is reported, not compared. Generators in SLOW
-(the i-PI run, about 34 min) are skipped unless CHECK_IPI=1.
+(the i-PI runs: neon about 34 min, water on GFN2-xTB about 1 h) are skipped unless CHECK_IPI=1.
 """
 
 import json
@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 
 RTOL, ATOL = 1e-9, 1e-12
-SLOW = {"gen_ipi_neon.py"}
+SLOW = {"gen_ipi_neon.py", "gen_ipi_water_xtb.py"}
 
 
 def compare(new, old, path, errors):

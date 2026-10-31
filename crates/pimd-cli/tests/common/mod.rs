@@ -8,14 +8,18 @@
 #![allow(dead_code)]
 #![allow(clippy::needless_range_loop)]
 
+/// The mock i-PI client of the `pimd-socket` tests (written from SPEC K-2), for the socket runs.
+#[path = "../../../pimd-socket/tests/common/mock.rs"]
+pub mod mock;
+
 use std::path::Path;
 
-use pimd_cli::Config;
+use pimd_cli::{Config, PotentialConfig};
 use pimd_core::units::K_B_HARTREE_PER_KELVIN;
-use pimd_core::{Beads, Rng};
+use pimd_core::{Beads, Cell, Rng};
 use pimd_estimators::{Rdf, potential_mean, total_primitive, total_virial};
 use pimd_integrators::{RingPolymerIntegrator, RingPolymerSim, RingState, Thermostat};
-use pimd_potentials::LennardJones;
+use pimd_potentials::{LennardJones, LjParams, Potential};
 
 /// 1 Eh in eV, CODATA 2018 (27.211386245988 eV; NIST). Hand value for checking the `*_mev`
 /// columns; see QUESTIONS.md Q13 (the constant is not in `pimd_core::units` yet).
@@ -163,6 +167,22 @@ pub struct RefRun {
     pub rows: Vec<RefRow>,
     /// (bin centres, g) from `Rdf`, accumulated at the recorded steps.
     pub rdf: Option<(Vec<f64>, Vec<f64>)>,
+    /// (production step, bead positions in bohr) at every step s with s % traj_every == 0
+    /// (MILESTONE_5 "Trajectory output"); empty unless `reference_run_with` was asked for frames.
+    pub frames: Vec<(usize, Beads)>,
+}
+
+/// The LJ parameters of an LJ config (panics for any other potential).
+pub fn lj_params(cfg: &Config) -> LjParams {
+    match &cfg.potential {
+        PotentialConfig::Lj(p) => *p,
+        other => panic!("not an LJ config: {other:?}"),
+    }
+}
+
+/// The periodic cell of a config (panics in the gas phase).
+pub fn cell_of(cfg: &Config) -> Cell {
+    cfg.system.cell.expect("periodic config")
 }
 
 /// Initial lattice (MILESTONE_4 "Initial state"): n_side = ⌈N^(1/3)⌉ computed exactly in
@@ -192,17 +212,22 @@ pub fn lattice(n: usize, l: [f64; 3]) -> Vec<[f64; 3]> {
     out
 }
 
-/// The initial ring-polymer state of the brief: every bead of atom i at lattice site i;
-/// momenta N(0, m P/β) per component (RP-3) from `rng`, atom i outer, bead j, dimension d inner.
+/// The initial ring-polymer state of the brief: every bead of atom i at lattice site i (M4), or at
+/// `system.positions[i]` when given (MILESTONE_5 "Initial state"); momenta N(0, m_i P/β) per
+/// component (RP-3) from `rng`, atom i outer, bead j, dimension d inner.
 pub fn initial_state(cfg: &Config, rng: &mut Rng) -> RingState {
     let n = cfg.system.n_atoms;
     let p = cfg.sampling.n_beads;
-    let m = cfg.system.mass;
-    let sites = lattice(n, cfg.system.cell.lengths());
+    let masses = cfg.system.masses.clone();
+    assert_eq!(masses.len(), n);
+    let sites = match &cfg.system.positions {
+        Some(x) => x.clone(),
+        None => lattice(n, cell_of(cfg).lengths()),
+    };
     let mut q = Beads::zeros(p, n);
     let mut mom = Beads::zeros(p, n);
-    let s = (m * p as f64 / cfg.sampling.beta).sqrt();
     for i in 0..n {
+        let s = (masses[i] * p as f64 / cfg.sampling.beta).sqrt();
         for j in 0..p {
             q.set(j, i, sites[i]);
             let mut v = [0.0; 3];
@@ -212,11 +237,7 @@ pub fn initial_state(cfg: &Config, rng: &mut Rng) -> RingState {
             mom.set(j, i, v);
         }
     }
-    RingState {
-        q,
-        p: mom,
-        masses: vec![m; n],
-    }
+    RingState { q, p: mom, masses }
 }
 
 /// The run of the brief written as a plain loop: one `Rng::from_seed(seed)` for the initial
@@ -224,6 +245,18 @@ pub fn initial_state(cfg: &Config, rng: &mut Rng) -> RingState {
 /// transform, `LennardJones` in the config cell; `n_equil` steps recording nothing, then
 /// production steps s = 1 … n_steps recorded when s % stride == 0, after the step.
 pub fn reference_run(cfg: &Config) -> RefRun {
+    let pot = LennardJones::new(lj_params(cfg)).unwrap();
+    reference_run_with(cfg, Box::new(pot), None)
+}
+
+/// As `reference_run`, with the given potential (an in-process stand-in for the configured one),
+/// in the config's cell or gas phase (C-1), and, with `traj_every = Some(t)`, the bead positions
+/// at every production step s with s % t == 0 (MILESTONE_5 "Trajectory output").
+pub fn reference_run_with(
+    cfg: &Config,
+    pot: Box<dyn Potential>,
+    traj_every: Option<usize>,
+) -> RefRun {
     let s = &cfg.sampling;
     let n = cfg.system.n_atoms;
     let p = s.n_beads;
@@ -232,21 +265,26 @@ pub fn reference_run(cfg: &Config) -> RefRun {
     let state = initial_state(cfg, &mut rng);
     let ig = RingPolymerIntegrator::new(s.dt, beta, p, Thermostat::PileL { tau0: Some(s.tau0) })
         .unwrap();
-    let pot = LennardJones::new(cfg.potential).unwrap();
     let cell = cfg.system.cell;
-    let mut sim = RingPolymerSim::new(state, Some(cell), ig, Box::new(pot)).unwrap();
+    let mut sim = RingPolymerSim::new(state, cell, ig, pot).unwrap();
     let mut rdf = cfg
         .output
         .rdf
         .as_ref()
-        .map(|r| Rdf::new(r.n_bins, r.r_max, cell, n).unwrap());
+        .map(|r| Rdf::new(r.n_bins, r.r_max, cell.unwrap(), n).unwrap());
     for _ in 0..s.n_equil {
         sim.step(&mut rng).unwrap();
     }
     let nf = n as f64;
     let mut rows = Vec::new();
+    let mut frames = Vec::new();
     for step in 1..=s.n_steps {
         sim.step(&mut rng).unwrap();
+        if let Some(t) = traj_every
+            && step % t == 0
+        {
+            frames.push((step, sim.state().q.clone()));
+        }
         if step % s.stride != 0 {
             continue;
         }
@@ -274,6 +312,7 @@ pub fn reference_run(cfg: &Config) -> RefRun {
     RefRun {
         rows,
         rdf: rdf.map(|r| (r.bin_centers(), r.g())),
+        frames,
     }
 }
 
@@ -306,4 +345,126 @@ pub fn mean_and_sigma(x: &[f64], len: usize, what: &str) -> (f64, f64) {
         "{what}: block length {len} too short (sigma {s1:e} vs {s4:e} at 4x)"
     );
     (m, s1.max(s4))
+}
+
+/// MILESTONE_5 "Config format": a gas-phase water molecule (brief example geometry, Å) with
+/// per-atom masses and symbols, driven by a socket potential at `{address}` with `{n_clients}`
+/// clients. P = 4, 300 K, 0.5 fs, short run.
+pub fn water_toml(address: &str, n_clients: usize) -> String {
+    format!(
+        r#"
+[system]
+n_atoms = 3
+masses_amu = [15.999, 1.008, 1.008]
+symbols = ["O", "H", "H"]
+positions_angstrom = [[0.0, 0.0, 0.1173], [0.0, 0.7572, -0.4692], [0.0, -0.7572, -0.4692]]
+
+[potential]
+kind = "socket"
+address = "{address}"
+n_clients = {n_clients}
+timeout_s = 20.0
+
+[sampling]
+temperature_kelvin = 300.0
+n_beads = 4
+dt_fs = 0.5
+tau0_fs = 20.0
+n_equil = 10
+n_steps = 30
+stride = 5
+seed = 4242
+
+[output]
+checkpoint_every = 10
+trajectory_every = 10
+"#
+    )
+}
+
+/// The toy model of the mock clients (`mock::toy_energy_forces`, gas phase) as an in-process
+/// `Potential`: the same floating-point operations on the same positions, so a socket run with
+/// toy-model mocks must reproduce an in-process run with this potential.
+pub struct ToyPotential;
+
+impl Potential for ToyPotential {
+    fn evaluate(
+        &mut self,
+        q: &Beads,
+        _cell: Option<&Cell>,
+        _subset: Option<&[usize]>,
+    ) -> Result<pimd_potentials::Evaluation, pimd_potentials::PotentialError> {
+        let (p, n) = (q.n_beads(), q.n_atoms());
+        let mut energies = Vec::with_capacity(p);
+        let mut forces = Vec::with_capacity(p * n * 3);
+        for j in 0..p {
+            let (e, f) = mock::toy_energy_forces(&q.as_slice()[j * n * 3..(j + 1) * n * 3]);
+            energies.push(e);
+            forces.extend(f);
+        }
+        Ok(pimd_potentials::Evaluation {
+            energies,
+            forces: Beads::from_vec(p, n, forces).unwrap(),
+            virial: None,
+        })
+    }
+}
+
+/// Starts `n` toy-model mock clients that connect to the Unix socket `path` (retrying until the
+/// run binds it).
+pub fn toy_clients(path: &Path, n: usize) -> std::thread::JoinHandle<Vec<mock::Log>> {
+    mock::spawn_clients(
+        mock::Endpoint::Unix(path.to_path_buf()),
+        (0..n).map(|_| mock::Spec::new(mock::toy_model())).collect(),
+    )
+}
+
+/// One `trajectory.xyz` frame: the step and P·N (symbol, [x, y, z] in Å), bead-major.
+pub type Frame = (usize, Vec<(String, [f64; 3])>);
+
+/// The `[step, P·N rows of (symbol, x, y, z)]` frames of a `trajectory.xyz`, checking the
+/// MILESTONE_5 layout: line 1 `P·N`, line 2 `step=<s> beads=<P> atoms=<N> units=angstrom`, then
+/// P·N lines `symbol x y z` (single spaces), every number written with `{}` (shortest round trip:
+/// re-formatting the parsed value gives the same text).
+pub fn read_trajectory(path: &Path, p: usize, n: usize) -> Vec<Frame> {
+    let t = text(path);
+    let lines: Vec<&str> = t.lines().collect();
+    let per = p * n + 2;
+    assert_eq!(
+        lines.len() % per,
+        0,
+        "trajectory.xyz: {} lines",
+        lines.len()
+    );
+    let mut frames = Vec::new();
+    for f in lines.chunks(per) {
+        assert_eq!(f[0], (p * n).to_string(), "line 1 must be P·N");
+        let h: Vec<&str> = f[1].split(' ').collect();
+        assert_eq!(h.len(), 4, "line 2: {:?}", f[1]);
+        let step: usize = h[0]
+            .strip_prefix("step=")
+            .unwrap_or_else(|| panic!("line 2: {:?}", f[1]))
+            .parse()
+            .unwrap();
+        assert_eq!(
+            f[1],
+            format!("step={step} beads={p} atoms={n} units=angstrom"),
+            "line 2"
+        );
+        let rows = f[2..]
+            .iter()
+            .map(|l| {
+                let w: Vec<&str> = l.split(' ').collect();
+                assert_eq!(w.len(), 4, "atom line {l:?}");
+                let x = [1, 2, 3].map(|k| {
+                    let v: f64 = w[k].parse().unwrap();
+                    assert_eq!(format!("{v}"), w[k], "not written with {{}}: {l:?}");
+                    v
+                });
+                (w[0].to_string(), x)
+            })
+            .collect();
+        frames.push((step, rows));
+    }
+    frames
 }

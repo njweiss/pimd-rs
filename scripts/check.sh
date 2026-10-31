@@ -2,7 +2,9 @@
 # Single pass/fail gate. Exits non-zero on the first failure.
 #   ./scripts/check.sh              fast checks (what implementers iterate on)
 #   CHECK_LONG=1 ./scripts/check.sh also runs long validation and reference-data checks
-#   CHECK_IPI=1 (with CHECK_LONG=1) also regenerates the slow i-PI reference (~34 min)
+#   CHECK_IPI=1 (with CHECK_LONG=1) also runs the socket validation (water on GFN2-xTB, feature
+#               socket-validation, about 1 h) and regenerates the slow i-PI references
+#               (neon about 34 min, water/xTB about 1 h)
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -46,10 +48,14 @@ step "cargo test, 4 threads"
 RAYON_NUM_THREADS=4 cargo test --workspace
 
 if [ "${CHECK_LONG:-0}" = "1" ]; then
-  # Every crate that has long tests defines the feature `long-validation`.
-  # Revisit --all-features if other features (e.g. a torch backend) are added.
-  step "long validation (release)"
-  RAYON_NUM_THREADS=4 cargo test --workspace --release --all-features
+  # Every crate that has long tests defines the feature `long-validation`; the water/xTB
+  # comparison with i-PI (feature `socket-validation`, pimd-cli) runs only with CHECK_IPI=1.
+  features="long-validation"
+  if [ "${CHECK_IPI:-0}" = "1" ]; then
+    features="long-validation,socket-validation"
+  fi
+  step "long validation (release, features: $features)"
+  RAYON_NUM_THREADS=4 cargo test --workspace --release --features "$features"
 
   if [ -f validation/verify_reference_data.py ]; then
     step "reference data regeneration check"

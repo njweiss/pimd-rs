@@ -282,6 +282,24 @@ impl RingPolymerSim {
         })
     }
 
+    /// As `new`, but takes the forces (`[P, N, 3]`, Eh/bohr) and per-bead energies (length P, Eh)
+    /// at `state.q` instead of evaluating them (restart, Q18). Validates masses (S-2) and shapes
+    /// (P-1) like `new`; no `evaluate` call.
+    ///
+    /// Errors: as `new`, except that no evaluation can fail: `IntegratorError::ShapeMismatch` if
+    /// `state`, the integrator's P, `forces` or `energies` disagree in size;
+    /// `IntegratorError::InvalidValue` if a mass is not positive and finite.
+    pub fn from_parts(
+        _state: RingState,
+        _cell: Option<Cell>,
+        _integrator: RingPolymerIntegrator,
+        _potential: Box<dyn Potential>,
+        _forces: Beads,
+        _energies: Vec<f64>,
+    ) -> Result<Self, IntegratorError> {
+        unimplemented!("M5: RingPolymerSim::from_parts")
+    }
+
     /// One step B(dt/2) A(dt/2) O(dt) A(dt/2) B(dt/2) (I-1), with exactly one `evaluate` (I-3).
     /// A O A run in normal-mode coordinates (one transform each way per step).
     ///

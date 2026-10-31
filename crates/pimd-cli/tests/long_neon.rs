@@ -43,7 +43,7 @@ mod common;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use common::{mean_and_sigma, observables, parse, pool, tmp};
+use common::{cell_of, lj_params, mean_and_sigma, observables, parse, pool, tmp};
 use lammps::Json;
 use pimd_cli::{run, run_from_checkpoint};
 
@@ -210,11 +210,14 @@ fn same_system_as_ipi() {
             "{w}: engine {a} vs generator {b}"
         )
     };
-    close(c.system.cell.lengths()[0], d.get("box_bohr").num(), "box");
-    close(c.potential.sigma, d.get("sigma_bohr").num(), "sigma");
-    close(c.potential.epsilon, d.get("epsilon_eh").num(), "epsilon");
-    close(c.potential.cutoff, d.get("cutoff_bohr").num(), "cutoff");
-    close(c.system.mass, d.get("mass_me").num(), "mass");
+    let lj = lj_params(&c);
+    close(cell_of(&c).lengths()[0], d.get("box_bohr").num(), "box");
+    close(lj.sigma, d.get("sigma_bohr").num(), "sigma");
+    close(lj.epsilon, d.get("epsilon_eh").num(), "epsilon");
+    close(lj.cutoff, d.get("cutoff_bohr").num(), "cutoff");
+    for &m in &c.system.masses {
+        close(m, d.get("mass_me").num(), "mass");
+    }
     close(c.sampling.beta, d.get("beta").num(), "beta");
     let pr = ipi().get("protocol");
     assert_eq!(pr.get("n_equil").num() as usize, N_EQUIL);
