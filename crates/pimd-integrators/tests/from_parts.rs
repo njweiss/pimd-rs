@@ -257,3 +257,30 @@ fn masses_validated() {
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 }
+
+/// Q23 (M5 review): a NaN or infinite given force or energy (a corrupt checkpoint that is
+/// otherwise well formed) is `InvalidValue { what: "given forces" | "given energies" }`; no
+/// `evaluate`.
+#[test]
+fn non_finite_parts_rejected() {
+    let (state, cell, params) = setup();
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut f = Beads::zeros(P, N);
+        f.set(P - 1, N - 1, [0.0, 0.0, bad]);
+        let mut e = vec![0.0; P];
+        e[P - 1] = bad;
+        let cases = [
+            ("given forces", f, vec![0.0; P]),
+            ("given energies", Beads::zeros(P, N), e),
+        ];
+        for (want, f, e) in cases {
+            let (pot, calls) = counting(params);
+            match RingPolymerSim::from_parts(state.clone(), Some(cell), integrator(), pot, f, e) {
+                Err(IntegratorError::InvalidValue { what, .. }) => assert_eq!(what, want),
+                Err(other) => panic!("{want} {bad}: expected InvalidValue, got {other:?}"),
+                Ok(_) => panic!("{want} {bad}: accepted"),
+            }
+            assert_eq!(calls.load(Ordering::SeqCst), 0, "{want}: evaluate called");
+        }
+    }
+}
