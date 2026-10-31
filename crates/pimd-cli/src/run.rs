@@ -4,12 +4,14 @@
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::time::Duration;
 
 use pimd_core::units::{BOHR_IN_ANGSTROM, HARTREE_IN_EV, K_B_HARTREE_PER_KELVIN};
 use pimd_core::{Beads, Rng, RngState};
 use pimd_estimators::{Rdf, potential_mean, total_primitive, total_virial};
 use pimd_integrators::{RingPolymerIntegrator, RingPolymerSim, RingState, Thermostat};
-use pimd_potentials::LennardJones;
+use pimd_potentials::{LennardJones, Potential};
+use pimd_socket::SocketPotential;
 
 use crate::config::{Config, PotentialConfig, put_u64};
 use crate::error::CliError;
@@ -27,9 +29,10 @@ pub struct RunSummary {
     pub rdf: Option<(Vec<f64>, Vec<f64>)>,
 }
 
-/// Runs `config` from the initial lattice: `n_equil` equilibration steps, then `n_steps`
-/// production steps. Writes `observables.csv`, `rdf.csv` (with an RDF), `checkpoint.bin` and
-/// `run.log` into `out_dir` (created if missing).
+/// Runs `config` from its initial positions (or the initial lattice): `n_equil` equilibration
+/// steps, then `n_steps` production steps. Writes `observables.csv`, `rdf.csv` (with an RDF),
+/// `trajectory.xyz` (with `trajectory_every`), `checkpoint.bin` and `run.log` into `out_dir`
+/// (created if missing). A socket potential binds its address and waits for its clients first.
 ///
 /// The summary means are NaN when no production step was recorded (`n_steps < stride`).
 ///
@@ -37,21 +40,17 @@ pub struct RunSummary {
 pub fn run(config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
     let s = &config.sampling;
     let mut rng = Rng::from_seed(s.seed);
-    let state = initial_state(config, &mut rng);
-    let sim = new_sim(config, state)?;
-    let rdf = config
-        .output
-        .rdf
-        .as_ref()
-        .map(|r| {
-            Rdf::new(
-                r.n_bins,
-                r.r_max,
-                periodic_cell(config),
-                config.system.n_atoms,
-            )
-        })
-        .transpose()?;
+    let state = initial_state(config, &mut rng)?;
+    let rdf = match (&config.output.rdf, config.system.cell) {
+        (Some(r), Some(cell)) => Some(Rdf::new(r.n_bins, r.r_max, cell, config.system.n_atoms)?),
+        _ => None,
+    };
+    let sim = RingPolymerSim::new(
+        state,
+        config.system.cell,
+        integrator(config)?,
+        potential(config)?,
+    )?;
     let mut d = Driver {
         sim,
         rng,
@@ -62,7 +61,12 @@ pub fn run(config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
         sum_e_vir: 0.0,
     };
     fs::create_dir_all(out_dir)?;
-    write_log(config, out_dir, "initial lattice")?;
+    let start = if config.system.positions.is_some() {
+        "initial positions"
+    } else {
+        "initial lattice"
+    };
+    write_log(config, out_dir, start)?;
     // Equilibration records nothing.
     for _ in 0..s.n_equil {
         d.sim.step(&mut d.rng)?;
@@ -126,16 +130,24 @@ const OBS_HEADER: &str =
 const MAGIC: &[u8; 8] = b"PIMDCKPT";
 const VERSION: u64 = 2;
 
-/// The initial ring-polymer state (MILESTONE_4 "Initial state"): every bead of atom i at lattice
-/// site i; momenta N(0, m·P/β) per component (RP-3), drawn atom i outer, bead j, dimension d inner.
-fn initial_state(config: &Config, rng: &mut Rng) -> RingState {
+/// The initial ring-polymer state (MILESTONE_4 "Initial state", MILESTONE_5 "Initial state"):
+/// every bead of atom i at `system.positions[i]` when given, else at lattice site i; momenta
+/// N(0, m_i·P/β) per component (RP-3), drawn atom i outer, bead j, dimension d inner.
+fn initial_state(config: &Config, rng: &mut Rng) -> Result<RingState, CliError> {
     let n = config.system.n_atoms;
     let p = config.sampling.n_beads;
-    if config.system.positions.is_some() {
-        unimplemented!("M5: initial positions from the config");
-    }
     let masses = config.system.masses.clone();
-    let sites = lattice(n, periodic_cell(config).lengths());
+    let sites = match (&config.system.positions, config.system.cell) {
+        (Some(x), _) => x.clone(),
+        (None, Some(cell)) => lattice(n, cell.lengths()),
+        // Rejected by `Config::from_toml_str` (C-1: the gas phase needs positions).
+        (None, None) => {
+            return Err(CliError::Parse(
+                "system: `positions_angstrom` is required without `box_angstrom` (gas phase)"
+                    .to_string(),
+            ));
+        }
+    };
     let mut q = Beads::zeros(p, n);
     let mut mom = Beads::zeros(p, n);
     for (i, &site) in sites.iter().enumerate() {
@@ -149,15 +161,7 @@ fn initial_state(config: &Config, rng: &mut Rng) -> RingState {
             mom.set(j, i, v);
         }
     }
-    RingState { q, p: mom, masses }
-}
-
-/// The config's periodic cell (M5 stub: the gas phase is not implemented yet).
-fn periodic_cell(config: &Config) -> pimd_core::Cell {
-    match config.system.cell {
-        Some(c) => c,
-        None => unimplemented!("M5: gas phase"),
-    }
+    Ok(RingState { q, p: mom, masses })
 }
 
 /// The first `n` sites of a simple cubic lattice with n_side = ⌈n^(1/3)⌉ (exact, in integers),
@@ -176,26 +180,41 @@ fn lattice(n: usize, l: [f64; 3]) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// `RingPolymerSim` with BAOAB + PILE-L(τ_0), the configured transform, and LJ in the config cell.
-fn new_sim(config: &Config, state: RingState) -> Result<RingPolymerSim, CliError> {
+/// BAOAB + PILE-L(τ_0) with the configured transform.
+fn integrator(config: &Config) -> Result<RingPolymerIntegrator, CliError> {
     let s = &config.sampling;
-    let ig = RingPolymerIntegrator::with_transform(
+    Ok(RingPolymerIntegrator::with_transform(
         s.dt,
         s.beta,
         s.n_beads,
         Thermostat::PileL { tau0: Some(s.tau0) },
         s.normal_modes,
-    )?;
-    let pot = match &config.potential {
-        PotentialConfig::Lj(lj) => LennardJones::new(*lj)?,
-        PotentialConfig::Socket { .. } => unimplemented!("M5: socket potential in the driver"),
-    };
-    Ok(RingPolymerSim::new(
-        state,
-        Some(periodic_cell(config)),
-        ig,
-        Box::new(pot),
     )?)
+}
+
+/// The configured potential: LJ in-process, or the socket server once its clients have connected
+/// (K-1).
+fn potential(config: &Config) -> Result<Box<dyn Potential>, CliError> {
+    Ok(match &config.potential {
+        PotentialConfig::Lj(lj) => Box::new(LennardJones::new(*lj)?),
+        PotentialConfig::Socket {
+            address,
+            n_clients,
+            timeout_s,
+        } => {
+            let timeout =
+                Duration::try_from_secs_f64(*timeout_s).map_err(|_| CliError::InvalidValue {
+                    what: "potential.timeout_s".to_string(),
+                    value: *timeout_s,
+                })?;
+            Box::new(SocketPotential::bind_and_accept(
+                address,
+                config.system.n_atoms,
+                *n_clients,
+                timeout,
+            )?)
+        }
+    })
 }
 
 /// `run.log`: version, seed, start point, config hash and the parsed config. Nothing
@@ -218,26 +237,41 @@ fn write_log(config: &Config, out_dir: &Path, start: &str) -> Result<(), CliErro
 
 impl Driver {
     /// Production from `self.step` to `n_steps`: step s is recorded when s % stride == 0, after
-    /// the step; checkpoints every `checkpoint_every` steps and at the end.
+    /// the step; a `trajectory.xyz` frame at every step s with s % trajectory_every == 0;
+    /// checkpoints every `checkpoint_every` steps and at the end.
     fn production(mut self, config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
         let s = &config.sampling;
-        if config.output.trajectory_every.is_some() {
-            unimplemented!("M5: trajectory output");
-        }
         let mut obs = BufWriter::new(fs::File::create(out_dir.join("observables.csv"))?);
         writeln!(obs, "{OBS_HEADER}")?;
+        let mut traj = match config.output.trajectory_every {
+            Some(_) => Some(BufWriter::new(fs::File::create(
+                out_dir.join("trajectory.xyz"),
+            )?)),
+            None => None,
+        };
         while self.step < s.n_steps {
             self.sim.step(&mut self.rng)?;
             self.step += 1;
+            if let (Some(t), Some(f)) = (config.output.trajectory_every, traj.as_mut())
+                && self.step.is_multiple_of(t)
+            {
+                self.write_frame(config, f)?;
+            }
             if self.step.is_multiple_of(s.stride) {
                 self.record(config, &mut obs)?;
             }
             if self.step.is_multiple_of(config.output.checkpoint_every) && self.step < s.n_steps {
                 obs.flush()?;
+                if let Some(f) = traj.as_mut() {
+                    f.flush()?;
+                }
                 self.write_checkpoint(config, out_dir)?;
             }
         }
         obs.flush()?;
+        if let Some(f) = traj.as_mut() {
+            f.flush()?;
+        }
         self.write_checkpoint(config, out_dir)?;
         let rdf = self.rdf.as_ref().map(|r| (r.bin_centers(), r.g()));
         if let Some((r, g)) = &rdf {
@@ -255,6 +289,28 @@ impl Driver {
             mean_e_vir: self.sum_e_vir / n,
             rdf,
         })
+    }
+
+    /// One `trajectory.xyz` frame (MILESTONE_5 "Trajectory output"): `P·N`, then
+    /// `step=<s> beads=<P> atoms=<N> units=angstrom`, then P·N lines `symbol x y z`, bead-major,
+    /// unwrapped positions in Å (C-5, U-3), symbol `X` without `symbols`.
+    fn write_frame(&self, config: &Config, f: &mut impl Write) -> Result<(), CliError> {
+        let q = &self.sim.state().q;
+        let (p, n) = (q.n_beads(), q.n_atoms());
+        writeln!(f, "{}", p * n)?;
+        writeln!(f, "step={} beads={p} atoms={n} units=angstrom", self.step)?;
+        for j in 0..p {
+            for i in 0..n {
+                let sym = config
+                    .system
+                    .symbols
+                    .as_ref()
+                    .map_or("X", |v| v[i].as_str());
+                let x = q.get(j, i).map(|c| c * BOHR_IN_ANGSTROM);
+                writeln!(f, "{sym} {} {} {}", x[0], x[1], x[2])?;
+            }
+        }
+        Ok(())
     }
 
     /// One observables row (per-atom E_prim, E_vir, V̄ in Eh, T_est in K, then meV and K
@@ -355,13 +411,14 @@ impl Driver {
         w
     }
 
-    /// Inverse of `encode` for `config`. The simulation is rebuilt from the saved positions and
-    /// momenta; its initialising evaluation must reproduce the saved forces and energies bitwise
-    /// (LJ results do not depend on neighbor-list history).
+    /// Inverse of `encode` for `config`. The simulation is rebuilt from the saved positions,
+    /// momenta, forces and energies with `RingPolymerSim::from_parts`, without re-evaluating
+    /// (Q18). The potential (for a socket: binding and accepting clients) is built only after the
+    /// whole file has been checked.
     ///
     /// Errors: `CliError::Checkpoint` for a malformed file (bad magic or version, wrong length),
-    /// a config-hash mismatch, saved shapes or RDF settings that disagree with `config`, or saved
-    /// forces and energies that a re-evaluation does not reproduce.
+    /// a config-hash mismatch, or saved shapes or RDF settings that disagree with `config`;
+    /// otherwise errors of building the potential.
     fn decode(config: &Config, bytes: &[u8]) -> Result<Driver, CliError> {
         let bad = |msg: &str| CliError::Checkpoint(msg.to_string());
         let mut r = Reader { bytes, pos: 0 };
@@ -411,16 +468,13 @@ impl Driver {
                 }
                 let n_samples = r.usize()?;
                 let counts = r.f64s(n_bins)?;
+                let cell = config
+                    .system
+                    .cell
+                    .ok_or_else(|| bad("RDF without a periodic cell"))?;
                 Some(
-                    Rdf::from_parts(
-                        rc.n_bins,
-                        rc.r_max,
-                        periodic_cell(config),
-                        n,
-                        counts,
-                        n_samples,
-                    )
-                    .map_err(|e| CliError::Checkpoint(format!("RDF: {e}")))?,
+                    Rdf::from_parts(rc.n_bins, rc.r_max, cell, n, counts, n_samples)
+                        .map_err(|e| CliError::Checkpoint(format!("RDF: {e}")))?,
                 )
             }
             (0 | 1, _) => return Err(bad("RDF presence differs from the config's [output]")),
@@ -434,18 +488,14 @@ impl Driver {
             p: mom,
             masses: config.system.masses.clone(),
         };
-        let sim = new_sim(config, state)?;
-        let same = |a: &[f64], b: &[f64]| {
-            a.iter()
-                .map(|x| x.to_bits())
-                .eq(b.iter().map(|x| x.to_bits()))
-        };
-        if !same(sim.forces().as_slice(), forces.as_slice()) || !same(sim.energies(), &energies) {
-            return Err(bad(
-                "saved forces or energies do not match a re-evaluation at the saved positions; \
-                 the file is corrupt or was written by a different build or machine",
-            ));
-        }
+        let sim = RingPolymerSim::from_parts(
+            state,
+            config.system.cell,
+            integrator(config)?,
+            potential(config)?,
+            forces,
+            energies,
+        )?;
         Ok(Driver {
             sim,
             rng: Rng::restore(&rng),
