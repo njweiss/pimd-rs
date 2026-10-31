@@ -54,7 +54,7 @@ pixi run test-validation        # same as CHECK_LONG=1 ./scripts/check.sh
 | M2 Ring-polymer sampling | merged |
 | M3 Classical core | merged |
 | M4 Quantum liquid, then release gate R1 | merged; R1: hold (2026-10-30) |
-| M5 Socket backend, GFN2-xTB | briefed (draft) |
+| M5 Socket backend, GFN2-xTB | briefed |
 | M6–M8 | not briefed yet (see SPEC §11) |
 
 Update this table when a milestone merges.
