@@ -11,8 +11,8 @@
 //! 0.529177210903 Å/bohr; compared to 1e-15 relative (a conversion by multiplication or by
 //! division by the inverse may differ in the last bit).
 //!
-//! The tests use trajectory_every = 10 with stride = 5, so whether "recorded step" also requires
-//! s % stride == 0 does not matter here (QUESTIONS.md Q19).
+//! `trajectory_every` is independent of `stride` (Q19): frames at every production step with
+//! s % trajectory_every == 0, also when that step is not a multiple of `stride`.
 
 mod common;
 
@@ -166,4 +166,20 @@ fn restart_concatenation() {
             "k = {k}, {threads} threads"
         );
     }
+}
+
+/// Q19 ((new) trajectory output): `trajectory_every` stands alone. With stride = 5 and
+/// trajectory_every = 3, frames are written at 3, 6, …, 39 (not only at multiples of 15), and they
+/// match the reference positions.
+#[test]
+fn trajectory_every_independent_of_stride() {
+    let d = tmp();
+    let toml = set(&periodic(40), "output", "trajectory_every", "3");
+    pool(1).install(|| run(&parse(&toml), d.path()).unwrap());
+    check_against_reference(&toml, d.path(), &["X"; 4]);
+    let frames = read_trajectory(&d.path().join("trajectory.xyz"), 4, 4);
+    assert_eq!(
+        frames.iter().map(|f| f.0).collect::<Vec<_>>(),
+        (3..=39).step_by(3).collect::<Vec<_>>()
+    );
 }

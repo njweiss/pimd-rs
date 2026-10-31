@@ -15,14 +15,6 @@ Owner decision:
 Number new entries from Q20. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
 brief, it moves to the index below; the full text stays in git history.
 
-## Q19 (open) — Trajectory recording rule: every s % trajectory_every == 0, or only recorded steps?
-Milestone: 5   Raised by: test author
-Spec text: MILESTONE_5 "Trajectory output": "one frame per recorded step s with s % `trajectory_every` == 0 in production"
-Test or code: crates/pimd-cli/tests/trajectory.rs (module comment)
-What seems wrong / ambiguous: "recorded step" is M4's term for s % stride == 0. Read literally, a frame needs s % stride == 0 *and* s % trajectory_every == 0; read loosely, frames are written at every production step with s % trajectory_every == 0, independently of stride. The two differ when trajectory_every is not a multiple of stride (e.g. stride = 5, trajectory_every = 3: frames at 15, 30, … vs 3, 6, 9, …). The Phase A tests use trajectory_every = 10 with stride = 5, so they accept both readings.
-Proposed resolution: frames at every production step s with s % trajectory_every == 0, independent of stride (the natural meaning of a separate output interval; the M5 validation uses trajectory_every = 2·stride). If the owner prefers the other reading, or wants trajectory_every to be required to be a multiple of stride (`InvalidValue { what: "output.trajectory_every" }` otherwise), a test can pin it.
-Owner decision:
-
 ## Resolved (index)
 
 Code and tests cite these numbers. Each decision now lives where the last column says.
@@ -47,3 +39,4 @@ Code and tests cite these numbers. Each decision now lives where the last column
 | Q16 | The checkpoint stores the RDF's n_bins and r_max; a restart whose RDF settings differ is `CliError::Checkpoint` (`[output]` stays outside the hash); found in M4 review | MILESTONE_4 "Restart determinism" |
 | Q17 | Declined: no overflow checks on n_atoms / n_beads; absurd sizes fail by OOM or capacity panic, which is accepted | MILESTONE_4 "Clarifications" |
 | Q18 | Restart keeps the bitwise re-evaluation check in M4; revisit before M5 (non-bitwise potentials would make every restart fail; alternative: restore saved forces into `RingPolymerSim`) | MILESTONE_4 "Clarifications" |
+| Q19 | `trajectory_every` stands alone: a frame at every production step with s % trajectory_every == 0, independent of `stride` | MILESTONE_5 "Clarifications" |
