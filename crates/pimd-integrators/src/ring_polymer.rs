@@ -288,7 +288,8 @@ impl RingPolymerSim {
     ///
     /// Errors: as `new`, except that no evaluation can fail: `IntegratorError::ShapeMismatch` if
     /// `state`, the integrator's P, `forces` or `energies` disagree in size;
-    /// `IntegratorError::InvalidValue` if a mass is not positive and finite.
+    /// `IntegratorError::InvalidValue` if a mass is not positive and finite, or a given force
+    /// (`what: "given forces"`) or energy (`what: "given energies"`) is not finite (Q23).
     pub fn from_parts(
         state: RingState,
         cell: Option<Cell>,
@@ -307,6 +308,14 @@ impl RingPolymerSim {
             ("atom count of given forces", n, forces.n_atoms()),
             ("number of given energies", p, energies.len()),
         ])?;
+        for (what, values) in [
+            ("given forces", forces.as_slice()),
+            ("given energies", energies.as_slice()),
+        ] {
+            if let Some(&value) = values.iter().find(|v| !v.is_finite()) {
+                return Err(IntegratorError::InvalidValue { what, value });
+            }
+        }
         Ok(RingPolymerSim {
             state,
             forces,

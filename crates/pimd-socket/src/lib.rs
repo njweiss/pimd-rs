@@ -339,7 +339,11 @@ fn exchange(s: &mut Stream, req: &Request, j: usize) -> Result<BeadResult, Fault
             "negative extra-string length {len}"
         )));
     }
-    read_bytes(s, len as usize)?;
+    // Q21: discard the extra string in bounded chunks instead of allocating `len` bytes.
+    let len = len as u64;
+    if std::io::copy(&mut (&mut *s).take(len), &mut std::io::sink())? != len {
+        return Err(Fault::Io(ErrorKind::UnexpectedEof.into()));
+    }
     if !energy.is_finite() {
         return Err(Fault::Protocol(format!("non-finite energy {energy}")));
     }
