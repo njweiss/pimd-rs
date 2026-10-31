@@ -17,6 +17,7 @@ pimd-core.workspace = true
 pimd-potentials.workspace = true
 pimd-integrators.workspace = true
 pimd-estimators.workspace = true
+pimd-socket.workspace = true
 thiserror.workspace = true
 # Config parsing only (MILESTONE_4); the checkpoint format is hand-written.
 serde.workspace = true
@@ -32,3 +33,6 @@ rayon.workspace = true
 [features]
 # Long statistical validation runs (WORKFLOW "Long validation"); run by CHECK_LONG=1 scripts/check.sh.
 long-validation = []
+# Gas-phase water on GFN2-xTB through the socket vs i-PI (MILESTONE_5; needs `pixi run -e ref`
+# for tblite and about an hour); run only by CHECK_LONG=1 CHECK_IPI=1 scripts/check.sh.
+socket-validation = []

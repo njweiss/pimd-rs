@@ -8,6 +8,7 @@ use pimd_core::units::{
 };
 use pimd_core::{Cell, Transform};
 use pimd_potentials::LjParams;
+use pimd_socket::Address;
 use serde::Deserialize;
 
 use crate::error::CliError;
@@ -17,23 +18,47 @@ use crate::error::CliError;
 pub struct Config {
     /// `[system]`.
     pub system: SystemConfig,
-    /// `[potential]` (`kind = "lj"`): ε in Eh, σ, cutoff and skin in bohr, shift flag (P-3).
-    pub potential: LjParams,
+    /// `[potential]`.
+    pub potential: PotentialConfig,
     /// `[sampling]`.
     pub sampling: SamplingConfig,
     /// `[output]`.
     pub output: OutputConfig,
 }
 
-/// `[system]`: one species in an orthorhombic periodic cell.
+/// `[system]`: N atoms with per-atom masses, in an orthorhombic periodic cell or in the gas phase
+/// (MILESTONE_5 "Config format").
 #[derive(Debug, Clone, PartialEq)]
 pub struct SystemConfig {
     /// Number of atoms N.
     pub n_atoms: usize,
-    /// Mass of every atom, m_e (from `mass_amu`).
-    pub mass: f64,
-    /// Periodic cell, bohr (from `box_angstrom`, one value for a cube or three).
-    pub cell: Cell,
+    /// Mass of each atom, length N, m_e (from `masses_amu`, or `mass_amu` for every atom).
+    pub masses: Vec<f64>,
+    /// Periodic cell, bohr (from `box_angstrom`, one value for a cube or three); `None` = gas
+    /// phase (C-1).
+    pub cell: Option<Cell>,
+    /// Initial position of each atom, length N, bohr (from `positions_angstrom`); `None` = the
+    /// M4 lattice (requires a cell).
+    pub positions: Option<Vec<[f64; 3]>>,
+    /// Element symbol of each atom, length N, for output only (`symbols`).
+    pub symbols: Option<Vec<String>>,
+}
+
+/// `[potential]`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PotentialConfig {
+    /// `kind = "lj"`: ε in Eh, σ, cutoff and skin in bohr, shift flag (P-3).
+    Lj(LjParams),
+    /// `kind = "socket"`: an i-PI protocol server (K-1) at `address` serving `n_clients ≥ 1`
+    /// clients, with `timeout_s > 0` seconds for accepting them and for every read and write.
+    Socket {
+        /// Where the server listens.
+        address: Address,
+        /// Number of clients to wait for.
+        n_clients: usize,
+        /// Accept, read and write timeout, s.
+        timeout_s: f64,
+    },
 }
 
 /// `[sampling]`: PIMD with BAOAB + PILE-L (I-1, T-1).
@@ -68,6 +93,8 @@ pub struct OutputConfig {
     pub rdf: Option<RdfConfig>,
     /// Write `checkpoint.bin` every this many production steps (and always at the end).
     pub checkpoint_every: usize,
+    /// Write a `trajectory.xyz` frame at production steps s with s % trajectory_every == 0.
+    pub trajectory_every: Option<usize>,
 }
 
 /// RDF histogram settings (E-7).
@@ -95,12 +122,20 @@ impl Config {
     /// covered (MILESTONE_4 "Restart determinism"). A checkpoint restarts only under a config
     /// with the same hash.
     pub(crate) fn hash(&self) -> u64 {
-        let (sy, po, sa) = (&self.system, &self.potential, &self.sampling);
+        // M5 stub: the M4 encoding for LJ in a periodic cell with one mass; the M5 fields are
+        // not covered yet.
+        let (sy, sa) = (&self.system, &self.sampling);
+        let PotentialConfig::Lj(po) = &self.potential else {
+            unimplemented!("M5: config hash for the socket potential")
+        };
+        let Some(cell) = sy.cell else {
+            unimplemented!("M5: config hash in the gas phase")
+        };
         let mut bytes = Vec::new();
         let mut u = |v: u64| put_u64(&mut bytes, v);
         u(sy.n_atoms as u64);
-        u(sy.mass.to_bits());
-        for l in sy.cell.lengths() {
+        u(sy.masses[0].to_bits());
+        for l in cell.lengths() {
             u(l.to_bits());
         }
         u(po.epsilon.to_bits());
@@ -148,8 +183,11 @@ struct RawConfig {
 #[serde(deny_unknown_fields)]
 struct RawSystem {
     n_atoms: usize,
-    mass_amu: f64,
-    box_angstrom: RawBox,
+    mass_amu: Option<f64>,
+    masses_amu: Option<Vec<f64>>,
+    symbols: Option<Vec<String>>,
+    positions_angstrom: Option<Vec<[f64; 3]>>,
+    box_angstrom: Option<RawBox>,
 }
 
 /// `box_angstrom`: one edge (cube) or a list of edges (three required).
@@ -164,18 +202,21 @@ enum RawBox {
 #[serde(rename_all = "lowercase")]
 enum RawKind {
     Lj,
+    Socket,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPotential {
-    #[allow(dead_code)] // Only "lj" exists; parsing it is the check.
     kind: RawKind,
-    epsilon_kelvin: f64,
-    sigma_angstrom: f64,
-    cutoff_sigma: f64,
-    skin_sigma: f64,
-    shift: bool,
+    epsilon_kelvin: Option<f64>,
+    sigma_angstrom: Option<f64>,
+    cutoff_sigma: Option<f64>,
+    skin_sigma: Option<f64>,
+    shift: Option<bool>,
+    address: Option<String>,
+    n_clients: Option<usize>,
+    timeout_s: Option<f64>,
 }
 
 #[derive(Deserialize, Default)]
@@ -207,6 +248,7 @@ struct RawOutput {
     rdf_bins: Option<usize>,
     rdf_rmax_angstrom: Option<f64>,
     checkpoint_every: usize,
+    trajectory_every: Option<usize>,
 }
 
 /// `InvalidValue` naming `field` (`section.key`).
@@ -251,8 +293,17 @@ impl RawConfig {
         } = self;
 
         let n_atoms = at_least_one("system.n_atoms", sy.n_atoms)?;
-        let mass = positive("system.mass_amu", sy.mass_amu)? * AMU_IN_ELECTRON_MASSES;
-        let edges = match sy.box_angstrom {
+        if sy.masses_amu.is_some() || sy.symbols.is_some() || sy.positions_angstrom.is_some() {
+            unimplemented!("M5: masses_amu, symbols, positions_angstrom");
+        }
+        let Some(box_angstrom) = sy.box_angstrom else {
+            unimplemented!("M5: gas phase");
+        };
+        let mass_amu = sy
+            .mass_amu
+            .ok_or_else(|| CliError::Parse("missing field `mass_amu`".to_string()))?;
+        let mass = positive("system.mass_amu", mass_amu)? * AMU_IN_ELECTRON_MASSES;
+        let edges = match box_angstrom {
             RawBox::Cube(l) => [l; 3],
             RawBox::Edges(v) => <[f64; 3]>::try_from(v.as_slice()).map_err(|_| {
                 CliError::Parse(format!(
@@ -267,26 +318,37 @@ impl RawConfig {
         }
         let cell = Cell::new(lengths)?;
 
+        if matches!(po.kind, RawKind::Socket) || po.address.is_some() {
+            unimplemented!("M5: socket potential");
+        }
+        let _ = (po.n_clients, po.timeout_s);
+        let need = |v: Option<f64>, key: &str| {
+            v.ok_or_else(|| CliError::Parse(format!("missing field `{key}`")))
+        };
+        let epsilon_kelvin = need(po.epsilon_kelvin, "epsilon_kelvin")?;
+        let sigma_angstrom = need(po.sigma_angstrom, "sigma_angstrom")?;
+        let cutoff_sigma = need(po.cutoff_sigma, "cutoff_sigma")?;
+        let skin_sigma = need(po.skin_sigma, "skin_sigma")?;
+        let shift = po
+            .shift
+            .ok_or_else(|| CliError::Parse("missing field `shift`".to_string()))?;
         let epsilon =
-            positive("potential.epsilon_kelvin", po.epsilon_kelvin)? * K_B_HARTREE_PER_KELVIN;
-        let sigma = positive("potential.sigma_angstrom", po.sigma_angstrom)? / BOHR_IN_ANGSTROM;
-        let cutoff_sigma = positive("potential.cutoff_sigma", po.cutoff_sigma)?;
-        if !(po.skin_sigma.is_finite() && po.skin_sigma >= 0.0) {
-            return Err(invalid("potential.skin_sigma", po.skin_sigma));
+            positive("potential.epsilon_kelvin", epsilon_kelvin)? * K_B_HARTREE_PER_KELVIN;
+        let sigma = positive("potential.sigma_angstrom", sigma_angstrom)? / BOHR_IN_ANGSTROM;
+        let cutoff_sigma = positive("potential.cutoff_sigma", cutoff_sigma)?;
+        if !(skin_sigma.is_finite() && skin_sigma >= 0.0) {
+            return Err(invalid("potential.skin_sigma", skin_sigma));
         }
         let potential = LjParams {
             epsilon,
             sigma,
             cutoff: cutoff_sigma * sigma,
-            skin: po.skin_sigma * sigma,
-            shift: po.shift,
+            skin: skin_sigma * sigma,
+            shift,
         };
         // C-4: cutoff + skin ≤ L_min/2.
         if potential.cutoff + potential.skin > 0.5 * cell.min_length() {
-            return Err(invalid(
-                "potential.cutoff_sigma",
-                po.cutoff_sigma + po.skin_sigma,
-            ));
+            return Err(invalid("potential.cutoff_sigma", cutoff_sigma + skin_sigma));
         }
 
         let temperature_kelvin = positive("sampling.temperature_kelvin", sa.temperature_kelvin)?;
@@ -330,15 +392,18 @@ impl RawConfig {
         let output = OutputConfig {
             rdf,
             checkpoint_every: at_least_one("output.checkpoint_every", out.checkpoint_every)?,
+            trajectory_every: out.trajectory_every,
         };
 
         Ok(Config {
             system: SystemConfig {
                 n_atoms,
-                mass,
-                cell,
+                masses: vec![mass; n_atoms],
+                cell: Some(cell),
+                positions: None,
+                symbols: None,
             },
-            potential,
+            potential: PotentialConfig::Lj(potential),
             sampling,
             output,
         })

@@ -1,0 +1,21 @@
+[package]
+name = "pimd-socket"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+pimd-core.workspace = true
+pimd-potentials.workspace = true
+
+[dev-dependencies]
+# PIMD runs through the socket (bridge test) and the D-3 thread-pool checks.
+pimd-integrators.workspace = true
+rayon.workspace = true
+tempfile.workspace = true
+
+[features]
+# Long validation (WORKFLOW "Long validation"): the bridge test against the Python `lj` client
+# (needs `pixi run -e ref`); run by CHECK_LONG=1 scripts/check.sh.
+long-validation = []

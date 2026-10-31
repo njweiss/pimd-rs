@@ -5,6 +5,7 @@ members = [
     "crates/pimd-potentials",
     "crates/pimd-integrators",
     "crates/pimd-estimators",
+    "crates/pimd-socket",
     "crates/pimd-cli",
 ]
 
@@ -19,6 +20,7 @@ pimd-core = { path = "crates/pimd-core" }
 pimd-potentials = { path = "crates/pimd-potentials" }
 pimd-integrators = { path = "crates/pimd-integrators" }
 pimd-estimators = { path = "crates/pimd-estimators" }
+pimd-socket = { path = "crates/pimd-socket" }
 thiserror = "2"
 rand = "0.10"
 rand_chacha = "0.10"

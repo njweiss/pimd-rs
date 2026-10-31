@@ -25,4 +25,8 @@ pub enum PotentialError {
         /// `positions.n_atoms()`.
         actual: usize,
     },
+    /// An external backend failed: I/O error, protocol violation, wrong atom count, non-finite
+    /// value, closed connection or timeout (K-5). The message names the failing bead.
+    #[error("backend: {0}")]
+    Backend(String),
 }
