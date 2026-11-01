@@ -1,7 +1,7 @@
 # Validation results
 
-Agreement of pimd-rs with every reference used in milestones M1–M4, and the performance table.
-Branch `milestone-4` (pimd-rs 0.1.0, rustc 1.96.0). Every number below has one of these sources:
+Agreement of pimd-rs with every reference used in milestones M1–M5, and the performance table.
+M1–M4 numbers from branch `milestone-4`, M5 numbers from branch `milestone-5` (pimd-rs 0.1.0, rustc 1.96.0). Every number below has one of these sources:
 
 - **[run]**: printed by the long validation suite, run for this file with
   `RAYON_NUM_THREADS=4 cargo test --workspace --release --all-features -- --nocapture`
@@ -21,7 +21,8 @@ Tolerance policy (`docs/WORKFLOW.md`): 5σ of the block-averaged estimate (block
 | Code | Version | Used for |
 |---|---|---|
 | LAMMPS | 22 Jul 2025 Update 6, conda `2025.07.22 cpu_py312_hdb376b3_mpi_openmpi_6` | M3 single point, trajectory, thermodynamics; LJ client of i-PI (M4); benchmark |
-| i-PI | 3.3.1 (conda `pyh5ded981_0`) | M4 liquid-neon PIMD |
+| i-PI | 3.3.1 (conda `pyh5ded981_0`) | M4 liquid-neon PIMD; M5 water/GFN2-xTB PIMD |
+| tblite | 0.7.0 (conda `py312h0536e37_2`) | M5 GFN2-xTB force client (`ipi_client.py xtb`), for both codes |
 | Python / numpy / scipy | 3.12.16 / 2.5.4 / 1.18.1 | reference generators (double well: numpy + scipy) |
 | matplotlib | 3.11.2 | plots only |
 
@@ -125,6 +126,55 @@ potential-energy fluctuations). Plot: [⟨E_vir⟩ vs 1/P²](plots/neon_converge
 
 These M4 numbers equal, to the printed digits, those recorded in the header of `long_neon.rs`
 for the reference implementation.
+
+## M5 Socket backend, GFN2-xTB
+
+Numbers printed by `RAYON_NUM_THREADS=4 cargo test --release -p pimd-socket --features
+long-validation --test bridge -- --nocapture` and `cargo test --release -p pimd-cli --features
+long-validation,socket-validation --test long_water_xtb -- --nocapture` on branch `milestone-5`
+(commit 823ef01), after `CHECK_LONG=1 CHECK_IPI=1 ./scripts/check.sh` had passed on the same
+commit (95 min wall, both i-PI references regenerated bit-identically) [run]. Tolerances and their
+derivation: the doc comments of `crates/pimd-socket/tests/bridge.rs` and
+`crates/pimd-cli/tests/long_water_xtb.rs` [comment].
+
+### Bridge: Python `lj` client through the socket vs in-process `LennardJones`
+
+Per evaluation, worst relative error over a 200-step PIMD trajectory driven by the in-process
+forces (tolerance 1e-12):
+
+| System | Clients | Energy | Forces | Virial |
+|---|---|---|---|---|
+| Liquid neon (M4 system, N = 108), P = 1 | 1 | 9.9e-16 | 9.4e-16 | 3.1e-15 |
+| Liquid neon, P = 4 | 2 | 1.1e-15 | 1.2e-15 | — (P > 1, K-6) |
+| 13-atom neon cluster, gas phase, P = 4 | 3 | 5.9e-16 | 4.7e-16 | — |
+
+50-step PIMD run through the socket vs in-process, same state and seed (tolerance max |Δq| ≤
+1e-10 bohr, |ΔV|/|V| ≤ 1e-12): neon P = 4, max |Δq| = 1.4e-14 bohr, |ΔV|/|V| = 0; cluster
+P = 4, 4.4e-16 bohr, 4.1e-16. The two codes differ by summation order only; over 3 000 steps
+the deviation grew roughly linearly to 2.9e-13 bohr (neon), far inside the chaos horizon
+[comment].
+
+### Water on GFN2-xTB: pimd-rs vs i-PI, P = 16
+
+One gas-phase water molecule, 300 K, P = 16, dt = 0.5 fs, BAOAB + PILE-L (τ_0 = 20 fs,
+γ_k = 2ω_k), 4 000 equilibration and 400 000 production steps (200 ps) per code, four
+single-threaded stateless `xtb` clients on both sides, blocks of 4 000 steps (2 ps) checked
+against 4× longer [json]. Per molecule; geometry bead-averaged.
+
+| Quantity | pimd-rs | i-PI [json] | Difference |
+|---|---|---|---|
+| ⟨E_vir⟩ (Eh) | −5.049908 ± 0.000023 | −5.049943 ± 0.000022 | +1.10σ_c |
+| ⟨E_prim⟩ (Eh) | −5.049985 ± 0.000047 | −5.050054 ± 0.000048 | +1.03σ_c |
+| ⟨V̄⟩ (Eh) | −5.061468 ± 0.000017 | −5.061498 ± 0.000015 | +1.32σ_c |
+| ⟨r_OH⟩ (bohr) | 1.849247 ± 0.000422 | 1.849065 ± 0.000432 | +0.30σ_c |
+| ⟨θ_HOH⟩ (°) | 107.0878 ± 0.0149 | 107.0927 ± 0.0154 | −0.23σ_c |
+| r_OH histogram, 25 bins 1.4–2.4 bohr | | | worst bin 2.19σ_c |
+
+Tolerance 5σ_c, bias allowance 0 (same splitting and dt on both sides). The dt vs dt/2 check
+with the reference implementation found no resolved bias (E_vir +6.2e-5 ± 3.3e-5 Eh, 1.9σ)
+[comment]. Run times: pimd-rs 914 s for this run; the i-PI reference 2 195 s in the gate. These
+numbers equal, to the printed digits, those recorded in the header of `long_water_xtb.rs` for
+the reference implementation.
 
 ## Performance
 
