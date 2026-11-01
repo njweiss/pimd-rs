@@ -9,6 +9,7 @@ name=$1 model=$2 device=${3:-cpu} n1=${4:-20} n2=${5:-120}
 S=spikes/m6-torch
 O=$S/out/socket/$name-$device
 PY=.pixi/envs/ml/bin/python
+export PATH="$PWD/.pixi/envs/ml/bin:$PATH"  # ptxas: torch 2.13 eager CUDA JIT-compiles Triton kernels
 rm -rf "$O"; mkdir -p "$O"
 run() {  # steps dumpdir
   local steps=$1 dump=$2 sock="$O/w.sock" pids=()
@@ -42,7 +43,7 @@ TOML
   for c in 1 2 3 4; do
     OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 $PY $S/mace_client.py \
       --address "unix:$PWD/$sock" "$model" --symbols O H H --device "$device" \
-      ${dump:+--dump "$dump" --dump-count 4} > "$O/client_${steps}_$c.log" 2>&1 &
+      ${dump:+--dump "$dump" --dump-count ${DUMP_COUNT:-4}} > "$O/client_${steps}_$c.log" 2>&1 &
     pids+=($!)
   done
   local t0=$(date +%s.%N)

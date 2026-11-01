@@ -115,8 +115,8 @@ OFF23b medium) and `ff_models/mace_off24/` (commit 58d5ac8 ignores `ff_models/`)
   `LIBTORCH_USE_PYTORCH=1 pixi run -e ml bash -c 'cd spikes/m6-torch && cargo build --release'`.
 - First build (no build.rs): **builds**; clean build 66 s wall (178 s CPU; mostly torch-sys
   compiling its C++ wrapper with the system g++ 13.3, against the env's headers, CXX11 ABI). 84
-  packages in the spike's Cargo.lock (tch pulls in zip, safetensors, ndarray, half, image-less
-  defaults, ...). Binary 0.95 MB (dynamically linked against libtorch).
+  packages in the spike's Cargo.lock (tch pulls in zip, safetensors, ndarray, half, rand 0.8, ...;
+  none of them reach the engine crates in M6b except through `pimd-torch`). Binary 0.95 MB (dynamically linked against libtorch).
 - Problem 1, runtime path: the binary has **no rpath**; it fails both inside `pixi run -e ml` and
   outside with `error while loading shared libraries: libtorch_cpu.so: cannot open shared object
   file`. pixi (like conda) sets no `LD_LIBRARY_PATH`. `LD_LIBRARY_PATH=<env>/…/site-packages/torch/lib`
@@ -139,7 +139,7 @@ OFF23b medium) and `ff_models/mace_off24/` (commit 58d5ac8 ignores `ff_models/`)
   `at::globalContext().setDeterministicAlgorithms`, which tch 0.26 does not expose. It compiles
   against `$CONDA_PREFIX/include` in a few seconds.
 
-**Answer Q1: yes**, CPU and CUDA, with two link flags. 
+**Answer Q1: yes**, CPU and CUDA, with two link flags.
 
 ### Q2 export
 
@@ -226,5 +226,191 @@ round differently). Batched (8 beads, one graph) vs a loop of 8 single-bead call
 **Answer Q3: Rust/TorchScript reproduces Python MACE to float64 rounding on CPU and CUDA, for the
 tiny model and MACE-OFF23 small and medium.** **Answer Q4: the O(N²) Rust edge builder (C-2
 minimum image, single image, r_max < L/2) produces mace's exact edge set.**
+
+### Q6 determinism (`m6-torch-spike det`; logs `out/q6.log`, `out/q6-noprof.log`)
+
+20 identical calls per setting, water P = 16 (48 atoms) and ethanol P = 32 (288 atoms), tiny and
+MACE-OFF23 small, float64 and float32 (float64 export cast in Rust), batched. Each call's energies
+and forces are fingerprinted (FNV-1a over the f64 bit patterns); "pattern" lists which distinct
+result each call produced. 17:31–17:38, load 0.8–1.5.
+
+1. **Default settings, CPU, 1 thread: not repeatable.** In all 8 combinations the pattern was
+   `0,1,1,1,…`: the first call differs from all later ones (forces by ≤ 4e-15 eV/Å, energies
+   equal), calls 2–20 agree bitwise. Cause: TorchScript's profiling graph executor runs the first
+   call(s) on the profiled graph and then switches to an optimised (specialised / fused) graph that
+   rounds differently. Confirmed on OFF23 small ethanol P = 32: with
+   `tch::jit::set_profiling_mode(false)` **or** `torch::jit::setGraphExecutorOptimize(false)` (shim),
+   all 20 calls are bitwise equal (pattern all 0), and equal to the first call of the default mode
+   (same fingerprint `1aeabfe4…` for tiny water in both runs). Consequence: with the default
+   executor, a restarted run (whose first evaluation is again a "first call") would not be bitwise
+   equal to an uninterrupted one. Cost of profiling off: +2 % to +6 % per call (probe, OFF23
+   small/medium, ethanol P = 32; `out/q5-probe.log`).
+2. **Profiling off, CPU: bitwise repeatable** at 1 and at 4 threads, all 16 runs.
+3. **Profiling off, CPU, 1 vs 4 threads:** float64 bitwise equal in all 4 cases (tiny and OFF23
+   small, water and ethanol); float32 equal for OFF23 small but **different for the tiny model**
+   (water and ethanol). So cross-thread-count equality holds in the cases measured for float64 but
+   is not a property libtorch guarantees (intra-op parallel reductions and MKL kernel choice depend
+   on the thread count and the shapes); it cannot be promised.
+4. **CUDA, default (profiling off): not repeatable for the larger batch.** Water P = 16: bitwise
+   equal 20/20. Ethanol P = 32: every call different (pattern 0,1,2,…,19), |ΔE| up to 2.7e-12 eV
+   (f64) / 1.5e-3 eV (f32, 3 ulp), |ΔF| up to 5e-15 (f64) / 2.4e-6 eV/Å (f32). Cause: MACE's
+   scatter sums (`index_add` / `scatter_add`) use atomics on CUDA.
+5. **CUDA with `at::globalContext().setDeterministicAlgorithms(true)`** (shim; tch 0.26 has no
+   binding): **runs without error** for MACE (no op raised "does not have a deterministic
+   implementation") and is bitwise repeatable 20/20 in all 8 combinations. Its results differ
+   from the non-deterministic ones (different summation order). Cost: see Q5 (CUDA deterministic
+   rows).
+6. Batched vs per-bead loop: not bitwise equal (different graph sizes, different summation
+   order), ≤ 5e-15 relative in forces (Q3/Q4 table). The M6b test "batched equals per-bead" must
+   use a tolerance, not bitwise equality.
+
+**Answer Q6:** repeatable bitwise on CPU at a fixed thread count, and on CUDA with deterministic
+algorithms, **provided the TorchScript profiling executor is switched off** (else the first call
+differs). Not guaranteed across thread counts, nor on CUDA without deterministic algorithms.
+
+### Q5 batching and timing (`run_bench.sh`; logs `out/q5.log`, `out/q5-probe.log`, `out/q5-chunks.log`)
+
+Real MACE-OFF23 small and medium weights arrived before this step, so the random
+`off23-*-like` models were generated but **not** benchmarked; all OFF23 numbers below are the
+real models. Settings: profiling executor off (Q6), median of 10 calls after 3 warm-up calls (5 after
+2 for medium), each call = Rust edge building + host→device copies + forward (incl. autograd forces)
++ copy back. "cpu1/cpu4" = libtorch intra-op threads 1/4 with `OMP_NUM_THREADS` equal; CUDA runs
+with 1 CPU thread. Batched = one graph of P beads; loop = P single-bead calls (bracketed; for
+medium only at P = 8). 17:44–17:57; load average 0.25 → 1.9 (mostly the benchmark itself; no other
+heavy process visible). Bead geometries from `make_geoms.py` (water 3 atoms, ethanol 9).
+
+**tiny, water**: ms per evaluation of all beads, batched (per-bead loop)
+
+| P | f64 cpu1 | f64 cpu4 | f64 cuda | f32 cpu1 | f32 cpu4 | f32 cuda |
+|---|---|---|---|---|---|---|
+| 1 | 3.8 | 4.1 | 44.3 | 4.2 | 4.2 | 25.4 |
+| 8 | 4.4 (31.7) | 4.8 (34.9) | 44.1 (295.6) | 4.6 (32.9) | 4.8 (34.4) | 40.5 (229.3) |
+| 16 | 4.9 (64.9) | 5.0 (71.4) | 22.9 (484.2) | 4.9 (65.6) | 5.3 (75.4) | 22.8 (506.6) |
+| 32 | 5.7 (126.3) | 6.0 (136.2) | 22.7 (889.9) | 5.5 (132.7) | 6.1 (154.7) | 25.2 (843.1) |
+
+**tiny, ethanol**: ms per evaluation of all beads, batched (per-bead loop)
+
+| P | f64 cpu1 | f64 cpu4 | f64 cuda | f32 cpu1 | f32 cpu4 | f32 cuda |
+|---|---|---|---|---|---|---|
+| 1 | 4.3 | 4.6 | 23.5 | 4.5 | 6.6 | 32.4 |
+| 8 | 6.7 (34.4) | 9.7 (36.9) | 23.0 (182.5) | 6.7 (37.3) | 7.5 (44.7) | 31.4 (174.0) |
+| 16 | 9.3 (69.9) | 11.6 (77.3) | 23.0 (462.5) | 8.5 (72.4) | 8.2 (75.1) | 44.8 (457.4) |
+| 32 | 14.4 (136.7) | 10.8 (152.2) | 16.5 (984.4) | 12.9 (142.1) | 14.6 (157.7) | 43.4 (847.2) |
+
+**off23-small, water**: ms per evaluation of all beads, batched (per-bead loop)
+
+| P | f64 cpu1 | f64 cpu4 | f64 cuda | f32 cpu1 | f32 cpu4 | f32 cuda |
+|---|---|---|---|---|---|---|
+| 1 | 10.4 | 6.5 | 22.9 | 7.6 | 6.2 | 30.4 |
+| 8 | 49.8 (81.0) | 18.6 (60.2) | 21.1 (229.8) | 28.6 (60.4) | 15.8 (53.3) | 28.5 (236.2) |
+| 16 | 104.8 (168.9) | 39.3 (115.6) | 32.9 (452.6) | 53.3 (119.8) | 25.4 (106.7) | 35.3 (453.9) |
+| 32 | 223.7 (321.7) | 98.2 (249.2) | 47.4 (648.2) | 104.2 (241.2) | 45.1 (193.5) | 24.3 (867.2) |
+
+**off23-small, ethanol**: ms per evaluation of all beads, batched (per-bead loop)
+
+| P | f64 cpu1 | f64 cpu4 | f64 cuda | f32 cpu1 | f32 cpu4 | f32 cuda |
+|---|---|---|---|---|---|---|
+| 1 | 23.1 | 10.7 | 30.1 | 14.3 | 9.0 | 26.1 |
+| 8 | 175.8 (179.7) | 78.9 (98.1) | 39.2 (241.9) | 84.6 (115.7) | 37.0 (75.1) | 16.3 (280.3) |
+| 16 | 363.1 (359.5) | 166.8 (198.4) | 68.7 (590.0) | 179.7 (233.4) | 83.3 (154.0) | 34.9 (465.7) |
+| 32 | 784.0 (720.0) | 386.0 (400.6) | 125.0 (899.1) | 394.9 (460.3) | 189.1 (309.9) | 31.9 (930.2) |
+
+**off23-medium, water**: ms per evaluation of all beads, batched (per-bead loop)
+
+| P | f64 cpu1 | f64 cpu4 | f64 cuda | f32 cpu1 | f32 cpu4 | f32 cuda |
+|---|---|---|---|---|---|---|
+| 1 | 31.8 | 18.6 | 25.2 | 19.4 | 11.9 | 25.6 |
+| 8 | 221.0 (257.8) | 93.9 (137.5) | 59.3 (289.0) | 105.4 (150.5) | 44.4 (98.9) | 30.1 (335.1) |
+| 16 | 459.9 | 192.3 | 107.2 | 213.6 | 95.7 | 29.8 |
+| 32 | 973.4 | 412.0 | 202.5 | 452.5 | 208.8 | 21.1 |
+
+**off23-medium, ethanol**: ms per evaluation of all beads, batched (per-bead loop)
+
+| P | f64 cpu1 | f64 cpu4 | f64 cuda | f32 cpu1 | f32 cpu4 | f32 cuda |
+|---|---|---|---|---|---|---|
+| 1 | 89.1 | 45.2 | 32.7 | 46.3 | 26.6 | 31.0 |
+| 8 | 757.9 (724.5) | 320.9 (308.3) | 160.9 (275.1) | 371.1 (372.4) | 161.3 (187.9) | 27.7 (278.0) |
+| 16 | 1626.3 | 739.6 | 311.6 | 776.4 | 355.1 | 29.1 |
+| 32 | 3357.7 | 1480.6 | 619.7 | 1688.1 | 804.0 | 47.3 |
+
+Cross-checks:
+- tch adds no measurable overhead: the same export timed from Python (`py_bench.py`, OFF23 small,
+  ethanol P = 32): CPU 1 thread 778 ms (Rust 784–817), CUDA 124.7 ms (Rust 125); eager Python
+  MACE 803 / 124 ms. CUDA P = 1: Python 21–25 ms, Rust 17–22 ms.
+- CUDA has a fixed cost of about 15–30 ms per call even for the tiny model at P = 1 (and in
+  Python): many small kernels, WSL2 launch latency, GPU idling at P8 / 210 MHz between calls. It
+  makes the per-bead loop on CUDA 5–30× slower than one batched call.
+- Profiling executor off costs +2 to +6 % (probe: OFF23 small/medium, ethanol P = 32, CPU 1 and 4
+  threads, CUDA).
+- CUDA deterministic algorithms (`out/q6-cuda-det-cost.log`, profiling off): OFF23 small/medium,
+  water P = 16 and ethanol P = 32, f64 and f32: +0 to +3 % where compute dominates (e.g. medium
+  ethanol P = 32 f64 617 → 629 ms, f32 49 → 53 ms); the 20–40 ms cases scatter by ±10 ms either
+  way (noise of the fixed cost).
+- Chunked CPU evaluation (spike option `--chunks 4`: four contiguous bead chunks evaluated
+  concurrently on four Rust threads, libtorch 1 thread each, `CModule` is `Send + Sync`): OFF23
+  small water P = 16 f64 40.7 ms (vs batched cpu4 39.3), ethanol P = 32 310 ms (vs 386); medium
+  water P = 16 170 ms (vs 192), ethanol P = 32 1320 ms (vs 1481); f32 about half. Bitwise equal to
+  the unchunked batched call and between 1 and 4 libtorch threads (fingerprint `d8ed6ad6…`,
+  ethanol P = 32 small f64).
+
+Reading the numbers:
+- **Batching**: on CUDA it is what makes the GPU usable (OFF23 small water P = 32: 47 ms batched vs
+  648 ms loop). On CPU it removes the per-call overhead (≈ 4 ms per call, see the tiny model:
+  P = 32 water 5.7 ms batched vs 126 ms loop) and lets intra-op threads work (cpu4: 98 vs 249 ms),
+  but at 1 thread a compute-bound model gains little (OFF23 small ethanol P = 32: 784 batched vs
+  720 loop, loop slightly faster).
+- **CPU threads**: 4 libtorch threads give 2.0–2.7× over 1 thread for OFF23 at P ≥ 8, not for tiny.
+- **float32 vs float64**: CPU 1.9–2.2×. CUDA: OFF23 small ethanol P = 32 125 → 32 ms (3.9×); medium
+  water P = 32 203 → 21 ms (9.6×), ethanol P = 32 620 → 47 ms (13×): the RTX 4060's float64
+  throughput limit shows once the batch is large enough.
+- **Per bead, best of each (OFF23 medium, ethanol P = 32)**: CPU f64 4 threads 46 ms/bead
+  (chunked 41), CUDA f64 19 ms/bead, CUDA f32 1.5 ms/bead.
+- CUDA beats 4 CPU threads (f64) only above roughly 30–50 atoms per batch (OFF23 small: water
+  P = 16, 48 atoms: CUDA 33 vs cpu4 39 ms; at P = 8, 24 atoms: 21 vs 19 ms).
+
+**Answer Q5:** evaluate all P beads in one batched graph. float64 CPU is the accurate,
+deterministic path (OFF23 medium water P = 16: 192 ms at 4 threads); float32 CUDA is the fast
+path: against float64 on 4 CPU threads it is 6.5× (medium water P = 16: 30 ms) to 31× (medium
+ethanol P = 32: 47 ms) faster, and 1.1× (small water P = 16) to 12× (small ethanol P = 32).
+
+### Q7 socket baseline (`run_socket.sh`, `mace_client.py`; logs `out/q7.log`, `out/socket/`)
+
+Engine: `cargo build --release -p pimd-cli` on this branch (no source change), `target/release/pimd-rs`
+with `kind = "socket"`, Unix socket, four `mace_client.py` clients (MACECalculator on the model
+file, float64, torch 1 thread, `OMP_NUM_THREADS=1`), water, M5 start geometry, P = 16, 300 K,
+dt 0.5 fs, τ0 20 fs, seed 31337, `n_equil = 0`, stride 1. Time per step = (t(220 steps) −
+t(20 steps)) / 200, wall clock of the engine process (clients start in parallel and load their
+model during the engine's accept; the difference removes that). 18:00–18:06; load 1.1 → 3.5
+(the four clients themselves).
+
+| model | clients | ms per step (P = 16) | in-process, same P = 16 water (Q5) |
+|---|---|---|---|
+| OFF23 small | 4 × CPU, 1 thread each | **68.8** | f64: cpu4 39.3, chunked 4×1 40.7, CUDA 32.9; f32: cpu4 25.4, CUDA 35.3 |
+| OFF23 small | 4 × CUDA (one GPU) | 263.5 | |
+| OFF23 medium | 4 × CPU, 1 thread each | **207.5** | f64: cpu4 192.3, chunked 4×1 170.4, CUDA 107.2; f32: cpu4 95.7, CUDA 29.8 |
+| OFF23 medium | 4 × CUDA (one GPU) | 320.4 | |
+
+The in-process numbers are force evaluations only; the engine's own work per step (P = 16,
+3 atoms: normal modes, thermostat, estimators) is far below a millisecond, so they compare
+directly with the socket's per-step time.
+
+Problems met: the CUDA clients first crashed (`RuntimeError: Cannot find ptxas`): PyTorch 2.13's
+eager CUDA path routes the `bmm_outer_product` backward in MACE's force autograd through a
+Triton kernel compiled at run time, and `ptxas` (in `.pixi/envs/ml/bin`) is only on PATH under
+`pixi run`. Fixed by adding the env's `bin` to PATH in `run_socket.sh`. The TorchScript path (Rust
+or Python) never hit Triton. A first 10/60-step run gave 65 ms/step (small, CPU), consistent.
+
+Agreement: clients dumped their evaluations (positions as received, converted bohr → Å with the
+U-2 constant; E, F in eV, eV/Å before conversion to atomic units). A short extra run (9 and 10
+steps, 40 dumps per client) gave 160 evaluations per model with beads spread by the dynamics
+(max |F| 0.08–8.9 eV/Å). The Rust spike evaluated the same positions (f64, CPU, 1 thread,
+profiling off): **OFF23 small: ΔE = 0 (bitwise) in all 160, max |ΔF| 8.9e-16 eV/Å (3.7e-16 of
+max |F|); OFF23 medium: ΔE = 0, max |ΔF| 8.9e-16 eV/Å (3.6e-16)**. Against the CUDA clients' first
+evaluations: ΔE = 0, ΔF ≤ 1.5e-15 eV/Å. Same level as Q3.
+
+**Answer Q7:** the socket path with four CPU clients takes 69 ms (small) and 208 ms (medium) per
+P = 16 water step; in-process float64 on 4 CPU threads is 1.75× (small) and 1.1–1.2× (medium)
+faster, float64 CUDA 2.1× / 1.9×, float32 CUDA 1.9× / 7×. Energies and forces agree with the
+socket path to float64 rounding (energies bitwise).
 
 ## Writeup and recommendation
