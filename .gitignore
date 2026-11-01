@@ -11,6 +11,8 @@
 *.pt
 *.pth
 *.model
+# Owner-downloaded force-field weights (MACE-OFF23/24); never committed
+/ff_models/
 
 # Python bytecode
 __pycache__/
