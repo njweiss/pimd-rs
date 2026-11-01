@@ -22,6 +22,7 @@ use tch::{CModule, Device, IValue, Kind, Tensor};
 unsafe extern "C" {
     fn spike_set_deterministic(on: i32);
     fn spike_get_deterministic() -> i32;
+    fn spike_set_graph_optimize(on: i32);
 }
 
 /// Bead geometry: `pos` is `[P, N, 3]` in Å, `cell` the orthorhombic lengths or `None`.
@@ -143,6 +144,9 @@ struct Opts {
     warmup: usize,
     edges_file: Option<String>,
     deterministic: bool,
+    profiling: bool,
+    optimize: bool,
+    chunks: usize,
 }
 
 fn parse_opts(args: &[String]) -> Opts {
@@ -155,6 +159,9 @@ fn parse_opts(args: &[String]) -> Opts {
         warmup: 5,
         edges_file: None,
         deterministic: false,
+        profiling: true,
+        optimize: true,
+        chunks: 1,
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -180,6 +187,9 @@ fn parse_opts(args: &[String]) -> Opts {
             "--warmup" => o.warmup = v().parse().unwrap(),
             "--edges-file" => o.edges_file = Some(v()),
             "--deterministic" => o.deterministic = true,
+            "--no-profiling" => o.profiling = false,
+            "--no-optimize" => o.optimize = false,
+            "--chunks" => o.chunks = v().parse().unwrap(),
             x => panic!("unknown option {x}"),
         }
     }
@@ -273,6 +283,26 @@ fn evaluate(m: &Model, g: &Geom, b0: usize, nb: usize, edges_file: Option<&str>)
 
 /// All beads, batched (one graph) or one call per bead.
 fn evaluate_all(m: &Model, g: &Geom, o: &Opts) -> (Vec<f64>, Vec<f64>) {
+    if o.batched && o.chunks > 1 {
+        // Fixed contiguous bead chunks, one Rust thread each (CModule is Send + Sync), results
+        // concatenated in bead order: the chunking depends only on (P, chunks).
+        let k = o.chunks.min(g.p);
+        let bounds: Vec<(usize, usize)> =
+            (0..k).map(|c| (c * g.p / k, (c + 1) * g.p / k - c * g.p / k)).collect();
+        let parts: Vec<(Vec<f64>, Vec<f64>)> = std::thread::scope(|sc| {
+            let hs: Vec<_> = bounds
+                .iter()
+                .map(|&(b0, nb)| sc.spawn(move || evaluate(m, g, b0, nb, None)))
+                .collect();
+            hs.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        let (mut e, mut f) = (Vec::new(), Vec::new());
+        for (pe, pf) in parts {
+            e.extend(pe);
+            f.extend(pf);
+        }
+        return (e, f);
+    }
     if o.batched {
         evaluate(m, g, 0, g.p, o.edges_file.as_deref())
     } else {
@@ -291,16 +321,20 @@ fn setup(o: &Opts) {
         tch::set_num_threads(t);
     }
     unsafe { spike_set_deterministic(i32::from(o.deterministic)) };
+    tch::jit::set_profiling_mode(o.profiling);
+    unsafe { spike_set_graph_optimize(i32::from(o.optimize)) };
 }
 
 fn describe(m: &Model, g: &Geom, o: &Opts) -> String {
     format!(
-        "device {:?} kind {:?} threads {} deterministic {} mode {} P {} N {}",
+        "device {:?} kind {:?} threads {} deterministic {} profiling {} mode {} chunks {} P {} N {}",
         m.device,
         m.kind,
         tch::get_num_threads(),
         unsafe { spike_get_deterministic() },
+        tch::jit::get_profiling_mode(),
         if o.batched { "batched" } else { "loop" },
+        o.chunks,
         g.p,
         g.n
     )
@@ -405,23 +439,32 @@ fn main() {
             let (e0, f0) = evaluate_all(&m, &g, &o);
             let fp0 = fingerprint(&e0, &f0);
             let (mut n_diff, mut max_de, mut max_df) = (0, 0.0f64, 0.0f64);
+            let mut seen = vec![fp0];
+            let mut pattern = String::from("0");
             for _ in 1..o.reps {
                 let (e, f) = evaluate_all(&m, &g, &o);
-                if fingerprint(&e, &f) != fp0 {
+                let fp = fingerprint(&e, &f);
+                if fp != fp0 {
                     n_diff += 1;
                 }
+                let k = seen.iter().position(|&x| x == fp).unwrap_or_else(|| {
+                    seen.push(fp);
+                    seen.len() - 1
+                });
+                pattern.push_str(&format!(",{k}"));
                 max_de = e.iter().zip(&e0).fold(max_de, |a, (x, y)| a.max((x - y).abs()));
                 max_df = f.iter().zip(&f0).fold(max_df, |a, (x, y)| a.max((x - y).abs()));
             }
             println!(
                 "det {} | {} calls, {} differ from the first, max|dE| {:.3e} eV, max|dF| {:.3e} \
-                 eV/A, fingerprint {:016x}",
+                 eV/A, fingerprint of last {:016x}, call pattern {}",
                 describe(&m, &g, &o),
                 o.reps,
                 n_diff,
                 max_de,
                 max_df,
-                fp0
+                seen[seen.len() - 1],
+                pattern
             );
         }
         _ => eprintln!("usage: see the module doc comment in src/main.rs"),

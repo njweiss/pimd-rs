@@ -9,3 +9,8 @@ extern "C" void spike_set_deterministic(int on) {
 extern "C" int spike_get_deterministic() {
   return at::globalContext().deterministicAlgorithms() ? 1 : 0;
 }
+
+#include <torch/csrc/jit/runtime/graph_executor.h>
+
+// TorchScript graph-executor optimisation (fusion, specialisation after profiling runs).
+extern "C" void spike_set_graph_optimize(int on) { torch::jit::setGraphExecutorOptimize(on != 0); }
