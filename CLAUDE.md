@@ -55,7 +55,7 @@ pixi run test-validation        # same as CHECK_LONG=1 ./scripts/check.sh
 | M3 Classical core | merged |
 | M4 Quantum liquid, then release gate R1 | merged; R1: hold (2026-10-30) |
 | M5 Socket backend, GFN2-xTB | merged |
-| M6 Torch backend, MACE-OFF23, ML-RPMD study | brief drafted (spike first) |
+| M6 Torch backend, MACE-OFF23, ML-RPMD study | M6a spike approved; M6b/M6c tentative |
 | M7–M8 | not briefed yet (see SPEC §11) |
 
 Update this table when a milestone merges.
