@@ -114,6 +114,6 @@ Starting or supervising clients from the engine; non-orthorhombic cells; i-PI's 
 
 ## Acceptance
 
-- [ ] All tests pass; `check.sh` exits 0, including thread-count runs
-- [ ] Bridge and water/xTB validation pass; agreement levels added to `validation/RESULTS.md`
-- [ ] Review done; no blocking findings; `QUESTIONS.md` has no open entries
+- [x] All tests pass; `check.sh` exits 0, including thread-count runs (full gate `CHECK_LONG=1 CHECK_IPI=1` passed on 823ef01, 95 min)
+- [x] Bridge and water/xTB validation pass; agreement levels added to `validation/RESULTS.md`
+- [x] Review done; no blocking findings; `QUESTIONS.md` has no open entries (should-fix F1/F2 fixed as Q20/Q21, nits as Q22/Q23, Q17 amended)
