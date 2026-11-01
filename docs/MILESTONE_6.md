@@ -1,6 +1,6 @@
 # Milestone 6: In-process torch backend, MACE-OFF23, gas-phase ML-RPMD
 
-Status: **draft**. Three phases, run in order:
+Status: **approved for M6a (2026-11-01)**; the M6b and M6c sections stay tentative until the post-spike amendment is approved. Three phases, run in order:
 
 | Phase | Flow | Output |
 | --- | --- | --- |
