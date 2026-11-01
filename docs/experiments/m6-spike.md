@@ -414,3 +414,225 @@ faster, float64 CUDA 2.1× / 1.9×, float32 CUDA 1.9× / 7×. Energies and force
 socket path to float64 rounding (energies bitwise).
 
 ## Writeup and recommendation
+
+Provenance: every number below is from the log above. "OFF23" = the real MACE-OFF23 small/medium
+weights (`ff_models/mace_off23/`, owner-supplied 2026-11-01); "tiny" = the random test model of
+`gen_tiny_mace.py`. Correctness was established on both (Q3, Q4, Q7); all timings (Q5, Q7) are
+OFF23 except the per-call-overhead remarks, which are tiny. No result depends on the random
+"OFF23-like" models (generated, not used: the real weights arrived first).
+
+### Summary of answers
+
+| Q | Answer | Key numbers |
+|---|---|---|
+| 1 build | Yes, CPU and CUDA, `tch` 0.26 against the `ml` env's libtorch 2.13.0 | Clean build 66 s, binary 0.95 MB; needs `-Wl,--no-as-needed,-ltorch_cuda` (else no CUDA) and rpath `$CONDA_PREFIX/lib` (else no run, also inside `pixi run`); then runs outside pixi |
+| 2 export | `e3nn.util.jit.compile` of a positional-tensor wrapper (`export_mace.py`) | Works unchanged for tiny and OFF23 small/medium; forces by autograd inside; virial available (`compute_virials`) and correct; float32 by `CModule::to` = float32 export bitwise |
+| 3 correctness | float64 equals Python MACE to rounding, CPU and CUDA | ΔE = 0 (CPU), ≤ 2.7e-12 eV (CUDA); ΔF ≤ 2e-15 relative. float32 error vs float64: ΔE ≤ 1.5e-3 eV (OFF23 ethanol), ΔF ≤ 4e-6 relative |
+| 4 graph | Rust all-pairs + C-2 minimum image gives mace's edge set exactly | Identical sets incl. shifts (gas phase and box with 224/416 crossing edges); ΔE = 0 |
+| 5 batching | One batched graph for all P beads; f64 CPU for exactness, f32 CUDA for speed | OFF23 medium water P = 16: f64 cpu4 192 ms, f64 CUDA 107, f32 CUDA 30; CUDA per-call floor 15–30 ms |
+| 6 determinism | Bitwise on CPU at fixed threads and on CUDA with deterministic algorithms, **only with the TorchScript profiling executor off** | Default executor: call 1 ≠ calls 2+; f32 tiny differs between 1 and 4 threads; CUDA default differs call to call at 288 atoms; deterministic mode +0–3 % |
+| 7 baseline | Socket + 4 Python CPU clients: 69 ms (small) / 208 ms (medium) per P = 16 water step | In-process f64 cpu4 1.75× / 1.1×, f64 CUDA 2.1× / 1.9×, f32 CUDA 1.9× / 7×; agreement ΔE = 0, ΔF ≤ 9e-16 eV/Å over 160 evaluations |
+
+### Recommendation
+
+1. **Backend: `tch` 0.26 + TorchScript** (closes SPEC §12's open question if the owner agrees). It
+   builds, links, runs on CPU and CUDA, reproduces Python MACE to float64 rounding, adds no
+   measurable overhead over Python's own TorchScript/eager call, and is faster than the socket
+   path in every configuration measured with CPU clients. No reason was found to look at PyO3.
+   Risk to note: TorchScript is in maintenance mode upstream; tch pins one libtorch version (0.26 ↔
+   2.13.0), so a PyTorch upgrade in the `ml` env needs a matching tch release.
+2. **Default dtype and device: float64 on CPU.** It is the only configuration that is both
+   validated to rounding and bitwise reproducible without extra machinery, and it is what the D-3
+   restart guarantee can cover. **float32 on CUDA is the documented fast option** (6–31× over f64
+   cpu4 for OFF23 medium at P ≥ 16) for production sampling once validated against float64 to a
+   stated tolerance; float64 on CUDA gains only ≈ 2× (RTX 4060 float64 throughput). float32 is
+   obtained by casting the float64 export in Rust (`CModule::to`), so one export file serves both.
+   A note for M6c: the float32 energy error (≤ 1.5e-3 eV ≈ 5.5e-5 Eh per bead, OFF23 ethanol) is
+   of the order of the M5 water error bars on ⟨V̄⟩ (≈ 2e-5 Eh); it is mostly float32 rounding of a
+   total that includes the atomic E0 (−2 081 eV for water). Energy observables should come from
+   float64 runs (or the export should return the interaction energy so E0 can be added in float64:
+   not measured).
+3. **Batching: all P beads in one graph per call** (positions `[P·N, 3]`, `ptr` = 0, N, …, P·N).
+   Mandatory on CUDA (fixed cost 15–30 ms per call on this WSL2 machine), useful on CPU (removes
+   ≈ 4 ms per-call overhead, enables intra-op threads). The libtorch intra-op thread count is a
+   config key. Bead-chunked evaluation on several Rust threads gave a further 10–20 % on CPU and
+   was bitwise equal to the single call in the one case checked; it is left out of M6b (simplicity)
+   and recorded as an option.
+4. **Determinism: the adapter must disable the TorchScript profiling executor**
+   (`tch::jit::set_profiling_mode(false)`, cost 2–6 %). Without it, the first evaluation of a
+   process rounds differently from later ones, which breaks restart = continuous run. On CUDA,
+   bitwise reproducibility needs `at::globalContext().setDeterministicAlgorithms(true)`, which tch
+   0.26 does not bind; the spike reached it with a 10-line C++ shim compiled from `build.rs`.
+   **Owner decision needed**: (a) include the shim in `pimd-torch` (build with `std::process::Command`
+   and `g++` as in the spike, no new crate; or with the `cc` build-dependency, which would need
+   approval), and promise bitwise CUDA results; or (b) no shim, CUDA checked to stated tolerances
+   only. Recommendation: (a) with the `Command` approach, since the cost is ≤ 3 % and the build
+   script exists anyway for the rpath and `--no-as-needed` flags.
+5. **Edges: built in Rust** each call: all ordered pairs i ≠ j within one bead with
+   |q_j − q_i + s| < r_max (strict), s from C-2's minimum image when a cell is given, requiring
+   r_max < L_min/2 (single image). O(P·N²) is negligible for gas-phase molecules (inside the
+   measured times); a cell-list / N-1 neighbour list can come with M8. r_max comes from the model
+   (`r_max()` method, Å) and is converted with `BOHR_IN_ANGSTROM`.
+6. **Export script**: `spikes/m6-torch/export_mace.py` as is (moves to
+   `crates/pimd-torch/scripts/export_mace.py`), including `import mace` first (e3nn 0.4.4 on torch
+   2.13 needs `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD`) and `@compile_mode("script")` on the wrapper.
+   Usage: `pixi run -e ml python crates/pimd-torch/scripts/export_mace.py MACE-OFF23_small.model
+   --out small.pt` (float64; the adapter casts). Exports of MACE-OFF23 are derived weights and are
+   never committed (they live next to the weights, e.g. `ff_models/`).
+
+### Proposed D-3 note (exact text, to append to D-3)
+
+> With the in-process torch backend (`kind = "mace"`, P-6) the guarantees hold only where the
+> model evaluation is bitwise reproducible: for a fixed model file, device, dtype, libtorch
+> intra-op thread count (`potential.threads`) and libtorch build. The adapter disables the
+> TorchScript profiling executor, so every call, including the first one after a restart, runs the
+> same graph. On CPU, results for a fixed thread count are bitwise reproducible, including restart.
+> On CUDA they are bitwise reproducible because the adapter enables libtorch's deterministic
+> algorithms [option (b): "On CUDA, results, including restart, agree only to stated tolerances"].
+> Results at different libtorch thread counts, CPU vs CUDA, float32 vs float64, and batched vs
+> per-bead evaluation agree only to stated tolerances.
+
+### Proposed final M6b section (replaces "M6b: engine (tentative)")
+
+**Crates touched**: `pimd-torch` (new, workspace member); `pimd-cli` (optional feature `torch`);
+`scripts/check.sh` (`CHECK_TORCH`). `pimd-potentials` unchanged (the existing
+`PotentialError::{Unsupported, InvalidParameter, ShapeMismatch, Backend}` cover every case).
+Spec: U-3, D-1, D-3 (note above), P-1, P-4, P-5, new P-6.
+
+**Build isolation.** `pimd-torch` is a workspace member whose `tch` dependency is optional behind
+its feature `torch`; without the feature the crate compiles to an empty library (`#![cfg(feature =
+"torch")]` on the modules), so `cargo test --workspace`, `clippy --workspace --all-targets` and
+`fmt` never touch libtorch, and torch-sys's build script never runs (Cargo.lock lists tch and its
+dependencies). `pimd-cli`'s feature `torch` enables `pimd-torch/torch`. `pimd-torch/build.rs` acts
+only when `CARGO_FEATURE_TORCH` is set: rpath `$CONDA_PREFIX/lib`, `-Wl,--no-as-needed,-ltorch_cuda`,
+and (option a) the deterministic-algorithms shim. Never `--all-features` (already the rule in
+check.sh).
+
+**Signatures** (pimd_torch, feature `torch`):
+
+```rust
+/// Where the model runs.
+pub enum Device { Cpu, Cuda(usize) }
+/// Precision inside the model (D-1: f32 only inside the adapter; inputs and outputs are f64).
+pub enum Dtype { F32, F64 }
+
+/// Atomic number of an element symbol ("H" -> 1, ...), H through I; `None` if unknown.
+pub fn atomic_number(symbol: &str) -> Option<u8>;
+
+pub struct MacePotential { /* module, species index per atom, r_max (bohr), device, dtype */ }
+impl MacePotential {
+    /// Loads a TorchScript export (export_mace.py) for N = `atomic_numbers.len()` atoms, sets the
+    /// libtorch intra-op thread count, disables the profiling executor, and (CUDA) enables
+    /// deterministic algorithms. Errors: missing/invalid file or non-export module -> Backend;
+    /// an atomic number the model does not know -> InvalidParameter { what: "atomic number" };
+    /// threads == 0 -> InvalidParameter { what: "threads" }; CUDA unavailable -> Backend.
+    pub fn load(path: &std::path::Path, atomic_numbers: &[u8], device: Device, dtype: Dtype,
+                threads: usize) -> Result<MacePotential, PotentialError>;
+    /// The model cutoff in bohr.
+    pub fn cutoff(&self) -> f64;
+}
+impl Potential for MacePotential { /* P-6 */ }
+```
+
+**Rule P-6** (proposed text):
+
+> **P-6** `MacePotential` (crate `pimd-torch`, feature `torch`) evaluates a TorchScript MACE
+> export (`crates/pimd-torch/scripts/export_mace.py`) in-process. One `evaluate` call evaluates all
+> P beads as one batched graph (bead j holds atoms jN … jN+N−1). Edges: every ordered pair i ≠ j of
+> the same bead with |q_j − q_i + s| < r_max, where s = 0 without a cell and s is the minimum-image
+> correction of C-2 with a cell; with a cell, r_max < L_min/2 is required, otherwise
+> `InvalidParameter { what: "cutoff", value: r_max }` (bohr). Positions are converted bohr → Å,
+> energies eV → Eh and forces eV/Å → Eh/bohr with the `units` constants only (U-3); with `Dtype::F32`
+> the cast to f32 happens on the way into the model and back to f64 on the way out (D-1). Energies
+> are per bead (S-4), forces −∇V by the model's autograd (S-3). `subset = Some` → `Unsupported`
+> (P-4); `positions.n_atoms() ≠ N` → `ShapeMismatch`; any libtorch error or a non-finite output →
+> `Backend(String)`. `virial` is `None` (P-5 allows it; the export can provide it for P = 1 later).
+> The TorchScript profiling executor is disabled and the intra-op thread count fixed at load
+> (D-3 note).
+
+**Config** (`kind = "mace"`, only with feature `torch`; otherwise a config error naming the feature):
+
+```toml
+[system]
+symbols = ["O", "H", "H"]          # required for kind = "mace"
+
+[potential]
+kind = "mace"
+model = "/path/to/export.pt"       # TorchScript export (export_mace.py)
+device = "cpu"                     # "cpu" | "cuda" | "cuda:N"; default "cpu"
+dtype = "float64"                  # "float64" | "float32"; default "float64"
+threads = 1                        # libtorch intra-op threads, ≥ 1; default 1
+```
+
+Config hash: covers the model file by an FNV-1a hash of its bytes (the existing `fnv1a` in
+config.rs; not the path), `device` kind (cpu vs cuda; not the index), `dtype`, `threads`, and for
+`kind = "mace"` also `symbols` (they select the species, unlike for the socket). Validation:
+unknown symbol, `threads = 0`, bad device string, `model`/`device`/`dtype`/`threads` with another
+kind, missing `symbols`.
+
+**Tests** (tiny model; reference JSON from `crates/pimd-torch/tests/data/gen_mace_ref.py`, which
+builds the tiny model with `gen_tiny_mace.py`'s code and seed, exports it, and evaluates Python
+MACE with mace's own neighbour list; run through `pixi run -e ml`, locked like all reference data):
+- Per evaluation vs Python MACE (water, ethanol, 4-water box with crossing edges; 8 displaced
+  beads): float64 CPU, |ΔE| ≤ 1e-12·|E| and |ΔF| ≤ 1e-10·max |F| (measured: ΔE = 0,
+  ΔF ≤ 2e-15·max |F|); float32 vs the float64 reference, |ΔE| ≤ 5e-3 eV (converted to Eh) and
+  |ΔF| ≤ 1e-4·max |F| (measured 1.5e-3 eV, 4e-6); CUDA rows run only if CUDA is available (skip with a message).
+- Units: hand-converted values (eV·`1/HARTREE_IN_EV`, Å·`1/BOHR_IN_ANGSTROM`) on one bead.
+- Batched equals per-bead to 1e-12 relative (not bitwise: measured 5e-15); bead independence
+  (moving bead k leaves the other beads' outputs unchanged to 1e-14 relative; bitwise expected,
+  not measured).
+- Edges: box geometry with unwrapped positions gives the same result as wrapped positions (1e-12),
+  and r_max ≥ L/2 → `InvalidParameter`.
+- Errors: `subset = Some` → `Unsupported`; wrong atom count → `ShapeMismatch`; unknown atomic
+  number; missing file, non-TorchScript file → `Backend`.
+- Determinism: first and second call bitwise equal (catches the profiling executor left on); 20
+  repeated calls bitwise equal at threads 1 and 4; CUDA repeat bitwise (option a); restart K +
+  checkpoint + K vs 2K bitwise on CPU float64.
+- Config: keys, defaults, validation, hash coverage (model bytes, dtype, device kind, threads,
+  symbols).
+- Long (`CHECK_LONG=1 CHECK_TORCH=1`, needs `PIMD_MACE_MODEL`, skips with a message otherwise):
+  MACE-OFF23 water PIMD in-process vs the socket path with Python MACE clients (`mace_client.py`
+  moved to `crates/pimd-torch/tests/clients/`), per evaluation (ΔE ≤ 1e-12·|E|, ΔF ≤ 1e-10·max |F|;
+  measured: ΔE bitwise, ΔF ≤ 4e-16·max |F|) and over a short trajectory with the M5 bridge's
+  tolerances.
+
+Mutant ideas (add to the tentative list): profiling executor left on; float32 cast applied after
+the model (outputs only); edge vector q_i − q_j (sign); ptr offsets off by one bead; species index
+by atomic number instead of position in the model's list; r_max in Å used as bohr.
+
+**`CHECK_TORCH` mechanics** (check.sh):
+
+```bash
+if [ "${CHECK_TORCH:-0}" = "1" ]; then
+  step "torch backend (pixi ml env)"
+  pixi run -e ml env LIBTORCH_USE_PYTORCH=1 bash -c '
+    cargo clippy -p pimd-torch -p pimd-cli --all-targets --features torch -- -D warnings &&
+    RAYON_NUM_THREADS=1 cargo test -p pimd-torch -p pimd-cli --features torch &&
+    RAYON_NUM_THREADS=4 cargo test -p pimd-torch -p pimd-cli --features torch'
+  # with CHECK_LONG=1: --release --features torch,long-validation (MACE-OFF23 via PIMD_MACE_MODEL)
+fi
+```
+
+Test models at test time: the tiny model's pickled MACE file is 274 kB and its export 0.37 MB, not
+"a few kB" as decision 5 assumed (the weights are 23 kB; the rest is pickled e3nn/MACE objects and
+TorchScript code). **Owner decision needed**: (i) commit the 0.37 MB float64 export under
+`tests/data/` (it is not a third-party weight file; regenerating it must reproduce the reference
+JSON), or (ii) commit nothing binary: `CHECK_TORCH` runs the generator into `target/` before
+`cargo test` and the tests read it from there. Recommendation: (ii), since `CHECK_TORCH` already
+runs inside `pixi run -e ml`. `verify_reference_data.py` must run the torch generators with the
+`ml` interpreter (`.pixi/envs/ml/bin/python`, with `$CONDA_PREFIX/bin` on PATH) instead of `ref`.
+
+### Problems and caveats met
+
+- No rpath and dropped `libtorch_cuda.so` (Q1); fixed in build.rs.
+- e3nn 0.4.4 cannot be imported on torch 2.13 before `import mace` (weights_only default; Q2).
+- TorchScript profiling executor breaks first-call reproducibility (Q6). Python's
+  `torch._C._jit_set_profiling_executor(False)` (legacy executor) is a different switch and
+  **breaks MACE's force autograd** ("element 0 of tensors does not require grad"); only the
+  profiling-mode switch (`tch::jit::set_profiling_mode`, Python `_jit_set_profiling_mode`) is safe.
+- Python MACE on CUDA (eager) needs `ptxas` on PATH on torch 2.13 (Triton kernel in the force
+  backward); the TorchScript path does not (Q7).
+- The binary depends on the `ml` env at an absolute path (RUNPATH); moving the repository needs a
+  rebuild.
+- Timings are on a shared WSL2 machine (load up to 3.5, mostly the spike's own processes); the
+  CUDA per-call floor (15–30 ms) may be lower on native Linux.
