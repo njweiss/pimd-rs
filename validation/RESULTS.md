@@ -1,7 +1,7 @@
 # Validation results
 
-Agreement of pimd-rs with every reference used in milestones M1–M5, and the performance table.
-M1–M4 numbers from branch `milestone-4`, M5 numbers from branch `milestone-5` (pimd-rs 0.1.0, rustc 1.96.0). Every number below has one of these sources:
+Agreement of pimd-rs with every reference used in milestones M1–M6b, and the performance table.
+M1–M4 numbers from branch `milestone-4`, M5 numbers from branch `milestone-5`, M6b numbers from branch `milestone-6` (pimd-rs 0.1.0, rustc 1.96.0). Every number below has one of these sources:
 
 - **[run]**: printed by the long validation suite, run for this file with
   `RAYON_NUM_THREADS=4 cargo test --workspace --release --all-features -- --nocapture`
@@ -25,6 +25,8 @@ Tolerance policy (`docs/WORKFLOW.md`): 5σ of the block-averaged estimate (block
 | tblite | 0.7.0 (conda `py312h0536e37_2`) | M5 GFN2-xTB force client (`ipi_client.py xtb`), for both codes |
 | Python / numpy / scipy | 3.12.16 / 2.5.4 / 1.18.1 | reference generators (double well: numpy + scipy) |
 | matplotlib | 3.11.2 | plots only |
+| PyTorch / mace-torch / e3nn | 2.13.0 (CUDA 13.0) / 0.3.17 / 0.4.4 | M6b Python MACE reference (`mace_ref.json`, `mace_client.py`); libtorch for the `tch` 0.26.0 crate |
+| MACE-OFF23 | small (`MACE-OFF23_small.model`, not committed) | M6b long validation |
 
 Versions from the `versions` blocks of the committed JSON files [json] and `pixi.lock`.
 
@@ -175,6 +177,54 @@ with the reference implementation found no resolved bias (E_vir +6.2e-5 ± 3.3e-
 [comment]. Run times: pimd-rs 914 s for this run; the i-PI reference 2 195 s in the gate. These
 numbers equal, to the printed digits, those recorded in the header of `long_water_xtb.rs` for
 the reference implementation.
+
+## M6 Torch backend, MACE (M6b)
+
+Numbers printed by `PIMD_MACE_MODEL=ff_models/mace_off23/MACE-OFF23_small.model
+RAYON_NUM_THREADS=4 pixi run -e ml env LIBTORCH_USE_PYTORCH=1 cargo test -p pimd-torch --release
+--features torch,long-validation -- --nocapture` on branch `milestone-6` (commit eb2f32d), after
+`CHECK_LONG=1 CHECK_IPI=1 CHECK_TORCH=1 ./scripts/check.sh` had passed on the same commit (99 min
+wall; all 7 reference generators, including both MACE ones, reproduced the committed files)
+[run]. Tolerances and their derivation: the doc comments of `crates/pimd-torch/tests/*.rs`
+[comment]. The MACE-OFF23 weights are not in the repository (`ff_models/` is ignored); the test
+reads them from `PIMD_MACE_MODEL` and exports them to a temporary file.
+
+### MACE-OFF23 small: in-process `MacePotential` vs Python MACE through the socket
+
+Gas-phase water at the M5 start geometry, P = 8, 300 K, dt = 0.5 fs, BAOAB + PILE-L. In
+process: `MacePotential`, CPU, float64, 1 libtorch thread. Through the socket: four
+`mace_client.py` clients (`MACECalculator` on the same model file, float64, CPU).
+
+| Check | Measured | Tolerance |
+|---|---|---|
+| Per evaluation, 100 steps: worst \|ΔE\|/\|E\| per bead | 1.86e-16 | 1e-12 |
+| Per evaluation, 100 steps: worst max\|ΔF\|/max\|F\| per bead | 6.42e-15 | 1e-10 |
+| 50-step trajectory, same state and seed: max \|Δq\| | 1.78e-15 bohr | 1e-10 bohr |
+| 50-step trajectory: \|ΔV\|/\|V\| | 0 | 1e-12 |
+
+### Tiny model vs Python MACE [json]
+
+The committed tiny MACE model (2 896 parameters, r_max 5 Å) against `mace_ref.json`
+(`MACECalculator`, mace's own neighbour list, float64 CPU). Water, ethanol and a periodic
+4-water box (positions not wrapped into the cell, 224 of 416 edges cross the boundary); 8
+displaced beads each, evaluated as one batch. Worst over the beads.
+
+| System | f64 CPU \|ΔE\|/\|E\| | f64 CPU max\|ΔF\|/max\|F\| | f64 CUDA max\|ΔF\|/max\|F\| | f32 CPU \|ΔE\| (eV) | f32 CPU max\|ΔF\|/max\|F\| |
+|---|---|---|---|---|---|
+| Water | 0 | 1.19e-15 | 1.73e-15 | 2.96e-4 | 1.34e-6 |
+| Ethanol | 0 | 3.93e-16 | 1.41e-15 | 8.09e-4 | 8.28e-7 |
+| 4-water box | 0 | 8.64e-16 | 6.47e-15 | 5.74e-4 | 4.52e-6 |
+
+Tolerances: float64 (CPU and CUDA) \|ΔE\| ≤ 1e-12·\|E\| and max\|ΔF\| ≤ 1e-10·max\|F\|; float32
+against the float64 reference \|ΔE\| ≤ 5e-3 eV and max\|ΔF\| ≤ 1e-4·max\|F\|. f64 CUDA
+\|ΔE\|/\|E\| = 0 for all three; f32 CUDA \|ΔE\| 2.96e-4, 8.09e-4, 5.74e-4 eV and max\|ΔF\|/max\|F\|
+1.75e-6, 6.64e-7, 4.43e-6. The CUDA numbers need a GPU and are skipped without one (here: RTX
+4060, CUDA 13.0).
+
+Batching all beads in one call vs one call per bead (tolerance 1e-12): \|ΔE\|/\|E\| = 0, worst
+max\|ΔF\|/max\|F\| 1.19e-15. Periodic box with atoms wrapped into [0, L) or shifted by lattice
+vectors (−2 … 2 box lengths per axis) vs the unwrapped positions (tolerance 1e-12):
+\|ΔE\|/\|E\| = 0, max\|ΔF\|/max\|F\| 2.98e-14 (wrapped) and 4.99e-14 (shifted).
 
 ## Performance
 
