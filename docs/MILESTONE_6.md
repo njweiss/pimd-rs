@@ -140,6 +140,12 @@ if [ "${CHECK_TORCH:-0}" = "1" ]; then
 fi
 ```
 
+### Clarifications (Phase A, owner 2026-11-01)
+
+- **Config variant (Q24):** `#[cfg(feature = "torch")] PotentialConfig::Mace { model: PathBuf, device: pimd_torch::Device, dtype: pimd_torch::Dtype, threads: usize, deterministic: bool }`; `Device` and `Dtype` derive `Debug, Clone, Copy, PartialEq, Eq`; `"cuda"` is `Device::Cuda(0)`. Bad `device`, `dtype` or `symbols` strings are `InvalidValue` naming the field or `Parse` mentioning its key; `threads = 0` is `InvalidValue { what: "potential.threads" }`; without the feature, a `kind = "mace"` config is an error whose message names `torch`. Whether the model bytes are hashed at parse time (an extra field) or at hash time is the implementer's choice.
+- **Build scripts (Q25):** `pimd-cli` has its own `build.rs` (std only, no-op without the feature) emitting the rpath and `--no-as-needed` link arguments, since `cargo:rustc-link-arg` does not reach dependent crates. Both `build.rs` files and `src/deterministic.cpp` are real code from Phase A; the implementer may change them.
+- **Long test model (Q26):** `PIMD_MACE_MODEL` names the MACE `.model` file (e.g. `ff_models/mace_off23/MACE-OFF23_small.model`); the long test exports it into a temporary directory with `export_mace.py`, so both sides use the same weights and nothing derived is written into the repository.
+
 ### Mutant ideas
 
 eV/Å conversion missing or inverted; forces taken as the gradient (sign); beads mixed up in the batch (ptr offsets off by one bead); edge vector q_i − q_j (sign); edge shifts with the wrong sign; float32 cast applied to the outputs only; cutoff in Å used as bohr; species index by atomic number instead of position in the model's list; profiling executor left on; `deterministic` ignored; hash missing the model bytes or covering the path.
