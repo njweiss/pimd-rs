@@ -74,6 +74,9 @@ pub enum PotentialConfig {
         threads: usize,
         /// `deterministic`: libtorch deterministic algorithms (default true).
         deterministic: bool,
+        /// 64-bit FNV-1a of the model file's bytes, read at parse time (config hash; not the
+        /// path).
+        model_fnv1a: u64,
     },
 }
 
@@ -134,10 +137,12 @@ impl Config {
     }
 
     /// 64-bit FNV-1a over a canonical little-endian encoding of the parsed `[system]`,
-    /// `[potential]` and `[sampling]` (atomic units), excluding `n_steps`, `symbols` and the
-    /// socket's `address`, `n_clients` and `timeout_s`; `[output]` is not covered (MILESTONE_4
-    /// "Restart determinism", MILESTONE_5 "Config hash"). A checkpoint restarts only under a
-    /// config with the same hash.
+    /// `[potential]` and `[sampling]` (atomic units), excluding `n_steps`, `symbols` (except for
+    /// kind = "mace") and the socket's `address`, `n_clients` and `timeout_s`; `[output]` is not
+    /// covered (MILESTONE_4 "Restart determinism", MILESTONE_5 "Config hash"). For kind = "mace"
+    /// it covers the model file's bytes (not its path), the device kind (not the index), dtype,
+    /// threads, deterministic and the symbols (MILESTONE_6 "Config"). A checkpoint restarts only
+    /// under a config with the same hash.
     pub(crate) fn hash(&self) -> u64 {
         let (sy, sa) = (&self.system, &self.sampling);
         let mut bytes = Vec::new();
@@ -177,7 +182,32 @@ impl Config {
             }
             PotentialConfig::Socket { .. } => u(1),
             #[cfg(feature = "torch")]
-            PotentialConfig::Mace { .. } => unimplemented!("M6b: config hash for kind = \"mace\""),
+            PotentialConfig::Mace {
+                device,
+                dtype,
+                threads,
+                deterministic,
+                model_fnv1a,
+                ..
+            } => {
+                u(2);
+                u(*model_fnv1a);
+                u(match device {
+                    pimd_torch::Device::Cpu => 0,
+                    pimd_torch::Device::Cuda(_) => 1,
+                });
+                u(match dtype {
+                    pimd_torch::Dtype::F64 => 0,
+                    pimd_torch::Dtype::F32 => 1,
+                });
+                u(*threads as u64);
+                u(u64::from(*deterministic));
+                // The symbols select the model's species (unlike for the socket).
+                // Hashed as atomic numbers (validated at parse time; 0 for anything else).
+                for s in sy.symbols.iter().flatten() {
+                    u(pimd_torch::atomic_number(s).map_or(0, u64::from));
+                }
+            }
         }
         u(sa.temperature_kelvin.to_bits());
         u(sa.beta.to_bits());
@@ -239,6 +269,7 @@ enum RawBox {
 enum RawKind {
     Lj,
     Socket,
+    Mace,
 }
 
 #[derive(Deserialize)]
@@ -253,6 +284,56 @@ struct RawPotential {
     address: Option<String>,
     n_clients: Option<usize>,
     timeout_s: Option<f64>,
+    model: Option<String>,
+    device: Option<String>,
+    dtype: Option<String>,
+    threads: Option<usize>,
+    deterministic: Option<bool>,
+}
+
+impl RawPotential {
+    /// `Parse` naming the first of the keys of another kind that are present, if any.
+    fn reject_keys(&self, kind: &str, keys: &[(&str, bool)]) -> Result<(), CliError> {
+        match keys.iter().find(|(_, present)| *present) {
+            Some((key, _)) => Err(CliError::Parse(format!(
+                "potential: `{key}` does not belong to kind = \"{kind}\""
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    /// The Lennard-Jones keys and whether each is present.
+    #[cfg(feature = "torch")]
+    fn lj_keys(&self) -> [(&'static str, bool); 5] {
+        [
+            ("epsilon_kelvin", self.epsilon_kelvin.is_some()),
+            ("sigma_angstrom", self.sigma_angstrom.is_some()),
+            ("cutoff_sigma", self.cutoff_sigma.is_some()),
+            ("skin_sigma", self.skin_sigma.is_some()),
+            ("shift", self.shift.is_some()),
+        ]
+    }
+
+    /// The socket keys and whether each is present.
+    #[cfg(feature = "torch")]
+    fn socket_keys(&self) -> [(&'static str, bool); 3] {
+        [
+            ("address", self.address.is_some()),
+            ("n_clients", self.n_clients.is_some()),
+            ("timeout_s", self.timeout_s.is_some()),
+        ]
+    }
+
+    /// The MACE keys and whether each is present.
+    fn mace_keys(&self) -> [(&'static str, bool); 5] {
+        [
+            ("model", self.model.is_some()),
+            ("device", self.device.is_some()),
+            ("dtype", self.dtype.is_some()),
+            ("threads", self.threads.is_some()),
+            ("deterministic", self.deterministic.is_some()),
+        ]
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -426,6 +507,7 @@ impl RawConfig {
 
         let potential = match po.kind {
             RawKind::Lj => {
+                po.reject_keys("lj", &po.mace_keys())?;
                 if po.address.is_some() || po.n_clients.is_some() || po.timeout_s.is_some() {
                     return Err(CliError::Parse(
                         "potential: `address`, `n_clients` and `timeout_s` belong to kind = \"socket\""
@@ -461,6 +543,7 @@ impl RawConfig {
                 PotentialConfig::Lj(lj)
             }
             RawKind::Socket => {
+                po.reject_keys("socket", &po.mace_keys())?;
                 if po.epsilon_kelvin.is_some()
                     || po.sigma_angstrom.is_some()
                     || po.cutoff_sigma.is_some()
@@ -485,6 +568,7 @@ impl RawConfig {
                     timeout_s,
                 }
             }
+            RawKind::Mace => mace(&po, sy.symbols.as_deref())?,
         };
 
         let temperature_kelvin = positive("sampling.temperature_kelvin", sa.temperature_kelvin)?;
@@ -554,4 +638,70 @@ impl RawConfig {
             output,
         })
     }
+}
+
+/// `kind = "mace"` without the feature `torch`: a config error naming the feature.
+#[cfg(not(feature = "torch"))]
+fn mace(_po: &RawPotential, _symbols: Option<&[String]>) -> Result<PotentialConfig, CliError> {
+    Err(CliError::Parse(
+        "potential: kind = \"mace\" needs pimd-rs built with the feature `torch`".to_string(),
+    ))
+}
+
+/// `kind = "mace"` (P-6, MILESTONE_6 "Config"): `model` required, `device`, `dtype`, `threads`,
+/// `deterministic` with their defaults; `system.symbols` required and known to
+/// `pimd_torch::atomic_number`. Reads the model file to hash its bytes.
+#[cfg(feature = "torch")]
+fn mace(po: &RawPotential, symbols: Option<&[String]>) -> Result<PotentialConfig, CliError> {
+    po.reject_keys("mace", &po.lj_keys())?;
+    po.reject_keys("mace", &po.socket_keys())?;
+    let symbols = need(symbols, "symbols")?;
+    if let Some(i) = symbols
+        .iter()
+        .position(|s| pimd_torch::atomic_number(s).is_none())
+    {
+        return Err(invalid("system.symbols", i as f64));
+    }
+    let model = std::path::PathBuf::from(need(po.model.as_ref(), "model")?);
+    let device = match po.device.as_deref() {
+        None | Some("cpu") => pimd_torch::Device::Cpu,
+        Some("cuda") => pimd_torch::Device::Cuda(0),
+        Some(s) => {
+            let index = s
+                .strip_prefix("cuda:")
+                .filter(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|i| i.parse::<usize>().ok())
+                .ok_or_else(|| {
+                    CliError::Parse(format!(
+                        "potential.device: expected \"cpu\", \"cuda\" or \"cuda:N\", got {s:?}"
+                    ))
+                })?;
+            pimd_torch::Device::Cuda(index)
+        }
+    };
+    let dtype = match po.dtype.as_deref() {
+        None | Some("float64") => pimd_torch::Dtype::F64,
+        Some("float32") => pimd_torch::Dtype::F32,
+        Some(s) => {
+            return Err(CliError::Parse(format!(
+                "potential.dtype: expected \"float64\" or \"float32\", got {s:?}"
+            )));
+        }
+    };
+    let threads = at_least_one("potential.threads", po.threads.unwrap_or(1))?;
+    let bytes = std::fs::read(&model).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("potential.model {}: {e}", model.display()),
+        )
+    })?;
+    let model_fnv1a = fnv1a(&bytes);
+    Ok(PotentialConfig::Mace {
+        model,
+        device,
+        dtype,
+        threads,
+        deterministic: po.deterministic.unwrap_or(true),
+        model_fnv1a,
+    })
 }
