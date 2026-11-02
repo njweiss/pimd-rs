@@ -173,3 +173,31 @@ steps (100 ps) after 20 000 equilibration steps, for every run. Estimated wall t
 MACE P = 1, 4, 8, 16 on CPU and both P = 32 seeds on CUDA, 6 processes) ≈ 9.5 h, limited by
 P = 16 on CPU; wave B (D₂O and HDO at P = 1 on CPU and P = 32 on CUDA, xTB P = 1 and 32) ≈ 3.5 h
 if the CUDA runs do not slow each other down by much. Total ≈ 13–15 h, within the 48 h budget.
+
+### 2026-11-02 09:50 Minima and harmonic analysis (`harmonic.py`; `results/harmonic_{mace,xtb}.json`)
+
+First run stopped at the script's own self-check: the P → ∞ check at P = 4 096 was set at 1e-6
+relative, but the exact error there is 2.4e-6 (it falls as 1/P², measured 9.6e-3, 6.1e-4,
+3.8e-5, 2.4e-6, 1.5e-7 at P = 64, 256, 1 024, 4 096, 16 384), so the check moved to P = 65 536 at
+1e-7. No result had been produced. Second run:
+
+| | MACE-OFF23 small | GFN2-xTB |
+|---|---|---|
+| V_min (Eh) | −76.4797923081 | −5.0705444506 |
+| r_e (bohr) / θ_e (°) | 1.81181 / 104.953 | 1.81265 / 107.225 |
+| H₂O frequencies (cm⁻¹) | 1 632.7, 3 844.4, 3 948.6 | 1 539.5, 3 642.9, 3 651.0 |
+| D₂O | 1 194.9, 2 771.9, 2 894.0 | 1 128.0, 2 623.8, 2 678.5 |
+| HDO | 1 431.1, 2 830.9, 3 898.6 | 1 350.0, 2 651.9, 3 646.3 |
+| Harmonic ZPE H₂O / D₂O / HDO (Eh) | 0.021473 / 0.015630 / 0.018591 | 0.020124 / 0.014649 / 0.017424 |
+
+Minimum: 2 Newton steps, max |F| 3.5e-11 (MACE), 5.3e-8 (xTB) Eh/bohr. Hessian step 1e-3 vs
+5e-4 bohr: frequencies change by ≤ 0.002 cm⁻¹. External eigenvalues ≤ 1.7e-10 a.u. (vibrational
+ones ≥ 5e-5). Harmonic E − V_min at 300 K, H₂O (Eh), P = 1, 4, 8, 16, 32, ∞: MACE 0.0057,
+0.0125, 0.01774, 0.02180, 0.02359, 0.02433; xTB 0.0057, 0.01235, 0.01726, 0.02085, 0.02237,
+0.02298 (D₂O and HDO in the JSON files).
+
+Notes against the hypotheses (not yet results; PIMD runs pending): the two models have almost the
+same r_e (differ by 0.0008 bohr), so the hypothesis "MACE gives a shorter ⟨r_OH⟩ than GFN2-xTB"
+would have to come from anharmonicity, not from the minimum; GFN2-xTB's θ_e is 2.3° wider. The
+harmonic quantum−classical difference at P = ∞ is 0.0186 Eh (MACE) and 0.0173 Eh (xTB); the
+harmonic D₂O/H₂O ratio of that difference is 0.69 (MACE).

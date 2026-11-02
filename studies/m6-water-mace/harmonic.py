@@ -125,7 +125,7 @@ def main():
     w0 = 0.017
     assert abs(e_p(w0, beta, 1) - 1 / beta) < 1e-15
     exact = 0.5 * w0 / np.tanh(0.5 * beta * w0)
-    assert abs(e_p(w0, beta, 4096) - exact) < 1e-6 * exact
+    assert abs(e_p(w0, beta, 65536) - exact) < 1e-7 * exact  # error falls as 1/P²: 2.4e-6 at 4096
 
     out = {"model": meta, "temperature_k": T, "v_min_eh": vmin, "max_force_eh_bohr": float(np.abs(f).max()),
            "newton_steps": iters, "geometry": {"positions_bohr": x.tolist(), "r_oh_bohr": r,
