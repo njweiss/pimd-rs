@@ -1,0 +1,31 @@
+{
+ "versions": {
+  "torch": "2.13.0",
+  "mace-torch": "0.3.17",
+  "e3nn": "0.4.4",
+  "numpy": "2.5.4",
+  "python": "3.12.16",
+  "sha256_tiny_mace.model": "33971bf0c808938e68f3cf19866e848b030510ca21f9a15fbce4d45c4465578c",
+  "sha256_tiny_mace_f64.pt": "d14b42e1b203ffffd7a27589c447920666dd29c310d7607f4fc34e42912900ae"
+ },
+ "seed": 20261101,
+ "atomic_numbers": [
+  1,
+  6,
+  7,
+  8
+ ],
+ "e0_ev": [
+  -13.6,
+  -1029.0,
+  -1485.0,
+  -2042.0
+ ],
+ "r_max_angstrom": 5.0,
+ "parameters": {
+  "n_parameters": 2896,
+  "sum": 15.828646206604944,
+  "sum_abs": 2240.351400975733,
+  "sum_sq": 2806.120909066473
+ }
+}

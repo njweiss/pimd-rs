@@ -6,6 +6,7 @@ members = [
     "crates/pimd-integrators",
     "crates/pimd-estimators",
     "crates/pimd-socket",
+    "crates/pimd-torch",
     "crates/pimd-cli",
 ]
 
@@ -21,6 +22,7 @@ pimd-potentials = { path = "crates/pimd-potentials" }
 pimd-integrators = { path = "crates/pimd-integrators" }
 pimd-estimators = { path = "crates/pimd-estimators" }
 pimd-socket = { path = "crates/pimd-socket" }
+pimd-torch = { path = "crates/pimd-torch" }
 thiserror = "2"
 rand = "0.10"
 rand_chacha = "0.10"
@@ -31,3 +33,5 @@ toml = "1"
 clap = { version = "4", features = ["derive"] }
 tempfile = "3"
 rustfft = { version = "6.4", default-features = false }
+# In-process TorchScript backend, pimd-torch only (MILESTONE_6 decision 4).
+tch = "0.26"
