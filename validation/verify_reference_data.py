@@ -8,6 +8,8 @@ Each crates/*/tests/data/gen_*.py is run with `--out <tmpdir>`. Every JSON file 
 next to the generator and match it: same keys and list lengths, numbers within rtol 1e-9 / atol 1e-12,
 other values exactly. The top-level "versions" block is reported, not compared. Generators in SLOW
 (the i-PI runs: neon about 34 min, water on GFN2-xTB about 1 h) are skipped unless CHECK_IPI=1.
+Generators of crates/pimd-torch (MACE, PyTorch) run with the pixi `ml` interpreter
+(`pixi run -e ml python`, MILESTONE_6) instead of the interpreter running this script.
 """
 
 import json
@@ -20,6 +22,7 @@ from pathlib import Path
 
 RTOL, ATOL = 1e-9, 1e-12
 SLOW = {"gen_ipi_neon.py", "gen_ipi_water_xtb.py"}
+ML_CRATES = {"pimd-torch"}
 
 
 def compare(new, old, path, errors):
@@ -52,7 +55,9 @@ def main():
             skipped += 1
             continue
         with tempfile.TemporaryDirectory() as tmp:
-            subprocess.run([sys.executable, str(gen), "--out", tmp], check=True, cwd=root)
+            crate = gen.relative_to(root).parts[1]
+            python = ["pixi", "run", "-e", "ml", "python"] if crate in ML_CRATES else [sys.executable]
+            subprocess.run([*python, str(gen), "--out", tmp], check=True, cwd=root)
             outputs = sorted(Path(tmp).glob("*.json"))
             if not outputs:
                 print(f"FAIL {rel}: wrote no JSON")

@@ -18,6 +18,8 @@ pimd-potentials.workspace = true
 pimd-integrators.workspace = true
 pimd-estimators.workspace = true
 pimd-socket.workspace = true
+# Empty unless the feature `torch` below is enabled (MILESTONE_6 "Build isolation").
+pimd-torch.workspace = true
 thiserror.workspace = true
 # Config parsing only (MILESTONE_4); the checkpoint format is hand-written.
 serde.workspace = true
@@ -36,3 +38,6 @@ long-validation = []
 # Gas-phase water on GFN2-xTB through the socket vs i-PI (MILESTONE_5; needs `pixi run -e ref`
 # for tblite and about an hour); run only by CHECK_LONG=1 CHECK_IPI=1 scripts/check.sh.
 socket-validation = []
+# In-process MACE backend (`kind = "mace"`, P-6); needs libtorch from the pixi `ml` environment
+# (CHECK_TORCH=1 scripts/check.sh).
+torch = ["pimd-torch/torch"]

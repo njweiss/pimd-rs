@@ -1,0 +1,26 @@
+[package]
+name = "pimd-torch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+pimd-core.workspace = true
+pimd-potentials.workspace = true
+# In-process TorchScript backend (MILESTONE_6 decision 4, owner-approved). Optional: without the
+# feature `torch` the crate is empty and torch-sys's build script never runs.
+tch = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Long validation: PIMD through the socket path with Python MACE clients vs in-process.
+pimd-integrators.workspace = true
+pimd-socket.workspace = true
+tempfile.workspace = true
+
+[features]
+# MacePotential (P-6); needs libtorch from the pixi `ml` environment (CHECK_TORCH=1 scripts/check.sh).
+torch = ["dep:tch"]
+# Long validation (WORKFLOW "Long validation"): MACE-OFF23 via PIMD_MACE_MODEL; run by
+# CHECK_LONG=1 CHECK_TORCH=1 scripts/check.sh.
+long-validation = []

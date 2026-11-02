@@ -210,6 +210,8 @@ fn potential(config: &Config) -> Result<Box<dyn Potential>, CliError> {
                 timeout,
             )?)
         }
+        #[cfg(feature = "torch")]
+        PotentialConfig::Mace { .. } => unimplemented!("M6b: kind = \"mace\""),
     })
 }
 

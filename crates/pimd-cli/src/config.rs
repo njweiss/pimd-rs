@@ -60,6 +60,21 @@ pub enum PotentialConfig {
         /// Accept, read and write timeout, s, in (0, 1e9].
         timeout_s: f64,
     },
+    /// `kind = "mace"` (feature `torch`): a TorchScript MACE export evaluated in-process (P-6),
+    /// for the atoms of `system.symbols` (required with this kind).
+    #[cfg(feature = "torch")]
+    Mace {
+        /// Path of the TorchScript export (`export_mace.py`), as given.
+        model: std::path::PathBuf,
+        /// `device`: "cpu" (default), "cuda" (= CUDA device 0) or "cuda:N".
+        device: pimd_torch::Device,
+        /// `dtype`: "float64" (default) or "float32".
+        dtype: pimd_torch::Dtype,
+        /// `threads`: libtorch intra-op threads, ≥ 1 (default 1).
+        threads: usize,
+        /// `deterministic`: libtorch deterministic algorithms (default true).
+        deterministic: bool,
+    },
 }
 
 /// `[sampling]`: PIMD with BAOAB + PILE-L (I-1, T-1).
@@ -161,6 +176,8 @@ impl Config {
                 u(u64::from(po.shift));
             }
             PotentialConfig::Socket { .. } => u(1),
+            #[cfg(feature = "torch")]
+            PotentialConfig::Mace { .. } => unimplemented!("M6b: config hash for kind = \"mace\""),
         }
         u(sa.temperature_kelvin.to_bits());
         u(sa.beta.to_bits());
