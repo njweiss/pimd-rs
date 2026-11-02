@@ -665,6 +665,7 @@ dependencies = [
  "pimd-integrators",
  "pimd-potentials",
  "pimd-socket",
+ "rayon",
  "tch",
  "tempfile",
 ]

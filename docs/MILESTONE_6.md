@@ -159,6 +159,7 @@ Review of 014fe5e: no blocking findings. Decisions, with tests added in `pimd-to
 - **N6 (Q27):** a float32 export is refused for `Dtype::F64` (`Backend`); it is accepted for `Dtype::F32`.
 - Left as they are: several `MacePotential`s in one process share the process-wide settings, last load wins (N3); with `Dtype::F32` absolute positions are rounded to f32 before the model takes differences, about 1e-6 Å for molecules within ~10 Å of the origin, inside the float32 tolerance (N7).
 - S3 (`validation/RESULTS.md`) is done at close-out.
+- After the simplify pass (owner, 2026-11-01): `pimd-torch` builds the edges in parallel over beads with `rayon` (new dependency of `pimd-torch`, optional behind its feature `torch`; owner-approved), joined in bead order so results do not depend on the thread count (D-3); the edge buffers are reused between calls and the inputs that depend only on P (species, ptr, cell) are cached. Checked bit-identical to the previous commit on the 4-water box and gas phase (P = 8, 35 steps, `RAYON_NUM_THREADS` 1 and 4).
 
 ### Mutant ideas
 
