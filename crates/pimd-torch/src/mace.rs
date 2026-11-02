@@ -153,25 +153,21 @@ impl MacePotential {
         let species = atomic_numbers
             .iter()
             .map(|&a| {
-                z.iter().position(|&m| m == i64::from(a)).map_or(
-                    Err(PotentialError::InvalidParameter {
+                z.iter()
+                    .position(|&m| m == i64::from(a))
+                    .map(|k| k as i64)
+                    .ok_or(PotentialError::InvalidParameter {
                         what: "atomic number",
                         value: f64::from(a),
-                    }),
-                    |k| Ok(k as i64),
-                )
+                    })
             })
             .collect::<Result<Vec<i64>, PotentialError>>()?;
         let kind = match dtype {
             Dtype::F64 => Kind::Double,
             Dtype::F32 => Kind::Float,
         };
-        let export_kind = if code == 32 {
-            Kind::Float
-        } else {
-            Kind::Double
-        };
-        if kind != export_kind {
+        // A float32 export with F64 was refused above, so only F32 from a float64 export casts.
+        if dtype == Dtype::F32 && code != 32 {
             // `CModule::to` panics on a libtorch error (e.g. out of GPU memory).
             catch_unwind(AssertUnwindSafe(|| module.to(device, kind, false))).map_err(|p| {
                 let msg = p
@@ -208,21 +204,20 @@ impl MacePotential {
     fn forward(
         &self,
         pos_angstrom: &[f64],
-        edges: &Edges,
+        edges: Edges,
         p: usize,
         n: usize,
     ) -> Result<(Vec<f64>, Vec<f64>), TchError> {
-        let (dev, kind) = (self.device, self.kind);
-        let opts = (kind, dev);
-        let to_i64 = |x: usize| x as i64;
-        let pn = to_i64(p * n);
-        let ne = to_i64(edges.sender.len());
+        let dev = self.device;
+        let opts = (self.kind, dev);
+        let pn = (p * n) as i64;
+        let ne = edges.sender.len() as i64;
         let positions = Tensor::f_from_slice(pos_angstrom)?
             .f_reshape([pn, 3])?
             .f_to_dtype_layout(opts, false, false)?;
         let sp: Vec<i64> = (0..p).flat_map(|_| self.species.iter().copied()).collect();
         let species = Tensor::f_from_slice(&sp)?.f_to(dev)?;
-        let mut ei = edges.sender.clone();
+        let mut ei = edges.sender;
         ei.extend_from_slice(&edges.receiver);
         let edge_index = Tensor::f_from_slice(&ei)?.f_reshape([2, ne])?.f_to(dev)?;
         let shifts = Tensor::f_from_slice(&edges.shift)?
@@ -231,9 +226,9 @@ impl MacePotential {
         let unit_shifts = Tensor::f_from_slice(&edges.unit)?
             .f_reshape([ne, 3])?
             .f_to_dtype_layout(opts, false, false)?;
-        let ptr: Vec<i64> = (0..=p).map(|b| to_i64(b * n)).collect();
+        let ptr: Vec<i64> = (0..=p).map(|b| (b * n) as i64).collect();
         let ptr = Tensor::f_from_slice(&ptr)?.f_to(dev)?;
-        let cell = Tensor::f_zeros([to_i64(p), 3, 3], opts)?;
+        let cell = Tensor::f_zeros([p as i64, 3, 3], opts)?;
         let out = self.module.forward_is(&[
             IValue::Tensor(positions),
             IValue::Tensor(species),
@@ -284,7 +279,7 @@ struct Edges {
 fn build_edges(q: &Beads, cell: Option<&Cell>, r_max: f64) -> Edges {
     let (p, n) = (q.n_beads(), q.n_atoms());
     let r2 = r_max * r_max;
-    let lengths = cell.map(Cell::lengths);
+    let l = cell.map_or([0.0; 3], Cell::lengths);
     let mut e = Edges::default();
     for b in 0..p {
         for i in 0..n {
@@ -295,17 +290,15 @@ fn build_edges(q: &Beads, cell: Option<&Cell>, r_max: f64) -> Edges {
                 }
                 let qj = q.get(b, j);
                 let d = [0, 1, 2].map(|k| qj[k] - qi[k]);
-                let (v, unit) = match (cell, lengths) {
-                    (Some(c), Some(l)) => {
-                        let v = c.min_image(d);
-                        (v, [0, 1, 2].map(|k| ((v[k] - d[k]) / l[k]).round()))
-                    }
-                    _ => (d, [0.0; 3]),
-                };
+                let v = cell.map_or(d, |c| c.min_image(d));
                 if v[0] * v[0] + v[1] * v[1] + v[2] * v[2] < r2 {
+                    // Shift in box lengths, computed only for kept edges (0 without a cell).
+                    let unit = match cell {
+                        Some(_) => [0, 1, 2].map(|k| ((v[k] - d[k]) / l[k]).round()),
+                        None => [0.0; 3],
+                    };
                     e.sender.push((b * n + i) as i64);
                     e.receiver.push((b * n + j) as i64);
-                    let l = lengths.unwrap_or([0.0; 3]);
                     e.shift
                         .extend((0..3).map(|k| unit[k] * l[k] * BOHR_IN_ANGSTROM));
                     e.unit.extend_from_slice(&unit);
@@ -352,7 +345,7 @@ impl Potential for MacePotential {
             .map(|x| x * BOHR_IN_ANGSTROM)
             .collect();
         let (e_ev, f_ev) = self
-            .forward(&pos, &edges, p, n)
+            .forward(&pos, edges, p, n)
             .map_err(|e| backend("MACE evaluation", e))?;
         if e_ev.len() != p || f_ev.len() != p * n * 3 {
             return Err(PotentialError::Backend(format!(

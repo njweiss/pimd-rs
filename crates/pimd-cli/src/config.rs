@@ -305,7 +305,6 @@ impl RawPotential {
     }
 
     /// The Lennard-Jones keys and whether each is present.
-    #[cfg(feature = "torch")]
     fn lj_keys(&self) -> [(&'static str, bool); 5] {
         [
             ("epsilon_kelvin", self.epsilon_kelvin.is_some()),
@@ -317,7 +316,6 @@ impl RawPotential {
     }
 
     /// The socket keys and whether each is present.
-    #[cfg(feature = "torch")]
     fn socket_keys(&self) -> [(&'static str, bool); 3] {
         [
             ("address", self.address.is_some()),
@@ -404,7 +402,7 @@ fn fits_f64s(n: Option<usize>) -> bool {
 }
 
 /// `v` if present, else `Parse` naming the missing `key`.
-fn need<T>(v: Option<T>, key: &str) -> Result<T, CliError> {
+pub(crate) fn need<T>(v: Option<T>, key: &str) -> Result<T, CliError> {
     v.ok_or_else(|| CliError::Parse(format!("missing field `{key}`")))
 }
 
@@ -510,7 +508,7 @@ impl RawConfig {
         let potential = match po.kind {
             RawKind::Lj => {
                 po.reject_keys("lj", &po.mace_keys())?;
-                if po.address.is_some() || po.n_clients.is_some() || po.timeout_s.is_some() {
+                if po.socket_keys().iter().any(|&(_, present)| present) {
                     return Err(CliError::Parse(
                         "potential: `address`, `n_clients` and `timeout_s` belong to kind = \"socket\""
                             .to_string(),
@@ -546,12 +544,7 @@ impl RawConfig {
             }
             RawKind::Socket => {
                 po.reject_keys("socket", &po.mace_keys())?;
-                if po.epsilon_kelvin.is_some()
-                    || po.sigma_angstrom.is_some()
-                    || po.cutoff_sigma.is_some()
-                    || po.skin_sigma.is_some()
-                    || po.shift.is_some()
-                {
+                if po.lj_keys().iter().any(|&(_, present)| present) {
                     return Err(CliError::Parse(
                         "potential: Lennard-Jones parameters belong to kind = \"lj\"".to_string(),
                     ));
