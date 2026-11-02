@@ -221,11 +221,7 @@ fn potential(config: &Config) -> Result<Box<dyn Potential>, CliError> {
         } => {
             // Validated against `pimd_torch::atomic_number` by `Config::from_toml_str`; a
             // hand-built config with bad symbols is refused here.
-            let symbols = config
-                .system
-                .symbols
-                .as_deref()
-                .ok_or_else(|| CliError::Parse("missing field `symbols`".to_string()))?;
+            let symbols = crate::config::need(config.system.symbols.as_deref(), "symbols")?;
             let z = symbols
                 .iter()
                 .enumerate()
