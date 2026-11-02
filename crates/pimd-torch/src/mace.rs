@@ -1,6 +1,7 @@
 //! `MacePotential` (SPEC P-6): a TorchScript MACE export (`scripts/export_mace.py`) evaluated
 //! in-process, all P beads as one batched graph.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
 use pimd_core::units::{BOHR_IN_ANGSTROM, HARTREE_IN_EV};
@@ -61,16 +62,24 @@ pub struct MacePotential {
     device: tch::Device,
     /// libtorch dtype inside the model (`Kind::Double` or `Kind::Float`).
     kind: Kind,
+    /// libtorch intra-op thread count, applied on the calling thread by every `evaluate`.
+    threads: i32,
 }
 
 impl MacePotential {
-    /// Loads a TorchScript export (export_mace.py) for N = `atomic_numbers.len()` atoms, sets the
-    /// libtorch intra-op thread count to `threads`, disables the TorchScript profiling executor,
-    /// and sets libtorch's deterministic-algorithms switch to `deterministic` (process-wide).
+    /// Loads a TorchScript export (export_mace.py) for N = `atomic_numbers.len()` atoms. Only
+    /// after the file, the module, its dtype and the atomic numbers are validated does it change
+    /// libtorch's process-wide settings: the intra-op thread count is set to `threads`, the
+    /// TorchScript profiling executor disabled and the deterministic-algorithms switch set to
+    /// `deterministic`. A failed load leaves them unchanged. libtorch keeps the thread count per
+    /// OS thread, so `evaluate` applies `threads` again on its calling thread (P-6).
     ///
     /// Errors: missing or invalid file, or a module that is not an export -> `Backend`;
+    /// a float32 export with `Dtype::F64` -> `Backend` (Q27); a libtorch error (or panic) while
+    /// casting the model to float32 -> `Backend`;
     /// an atomic number the model does not know -> `InvalidParameter { what: "atomic number" }`;
-    /// `threads == 0` -> `InvalidParameter { what: "threads" }`; CUDA unavailable -> `Backend`.
+    /// `threads == 0` -> `InvalidParameter { what: "threads" }`; CUDA unavailable or a CUDA index
+    /// at or above the device count -> `Backend`.
     pub fn load(
         path: &Path,
         atomic_numbers: &[u8],
@@ -102,12 +111,6 @@ impl MacePotential {
                 tch::Device::Cuda(i)
             }
         };
-        // Process-wide libtorch settings (P-6, D-3).
-        tch::set_num_threads(n_threads);
-        tch::jit::f_set_profiling_mode(false)
-            .map_err(|e| backend("disabling the profiling executor", e))?;
-        ffi::pimd_torch_set_deterministic(i32::from(deterministic));
-
         if !path.is_file() {
             return Err(PotentialError::Backend(format!(
                 "{}: not a file",
@@ -135,6 +138,13 @@ impl MacePotential {
             }
             Err(e) => return Err(not_export(e)),
         };
+        if code == 32 && dtype == Dtype::F64 {
+            return Err(PotentialError::Backend(
+                "float32 export refused for Dtype::F64 (it would run with float32-rounded \
+                 weights; export with --dtype float64)"
+                    .to_string(),
+            ));
+        }
         if !(r_max_angstrom.is_finite() && r_max_angstrom > 0.0) {
             return Err(PotentialError::Backend(format!(
                 "model r_max {r_max_angstrom} Å is not positive and finite"
@@ -162,15 +172,29 @@ impl MacePotential {
             Kind::Double
         };
         if kind != export_kind {
-            module.to(device, kind, false);
+            // `CModule::to` panics on a libtorch error (e.g. out of GPU memory).
+            catch_unwind(AssertUnwindSafe(|| module.to(device, kind, false))).map_err(|p| {
+                let msg = p
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+                    .or_else(|| p.downcast_ref::<&str>().copied())
+                    .unwrap_or("panic");
+                PotentialError::Backend(format!("casting the model to {kind:?}: {msg}"))
+            })?;
         }
         module.f_set_eval().map_err(|e| backend("eval mode", e))?;
+        // Process-wide libtorch settings (P-6, D-3), only after everything above is validated.
+        tch::jit::f_set_profiling_mode(false)
+            .map_err(|e| backend("disabling the profiling executor", e))?;
+        tch::set_num_threads(n_threads);
+        ffi::pimd_torch_set_deterministic(i32::from(deterministic));
         Ok(MacePotential {
             module,
             species,
             r_max: r_max_angstrom / BOHR_IN_ANGSTROM,
             device,
             kind,
+            threads: n_threads,
         })
     }
 
@@ -301,6 +325,8 @@ impl Potential for MacePotential {
         cell: Option<&Cell>,
         subset: Option<&[usize]>,
     ) -> Result<Evaluation, PotentialError> {
+        // libtorch keeps the intra-op thread count per OS thread (P-6, D-3).
+        tch::set_num_threads(self.threads);
         if subset.is_some() {
             return Err(PotentialError::Unsupported);
         }

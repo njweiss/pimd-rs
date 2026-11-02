@@ -130,7 +130,9 @@ impl Config {
     ///
     /// Errors: `CliError::Parse` for TOML syntax errors, missing fields, unknown keys and
     /// wrongly typed values; `CliError::InvalidValue` (naming the field) for out-of-range values,
-    /// including `n_beads = 0` and `cutoff + skin > L_min/2` (C-4).
+    /// including `n_beads = 0` and `cutoff + skin > L_min/2` (C-4); `CliError::Io` (naming
+    /// `potential.model` and the path) for a model file that cannot be read (kind = "mace": the
+    /// file is read and hashed at parse time, Q24).
     pub fn from_toml_str(s: &str) -> Result<Config, CliError> {
         let raw: RawConfig = toml::from_str(s).map_err(|e| CliError::Parse(e.to_string()))?;
         raw.validate()
