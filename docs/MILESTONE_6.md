@@ -146,6 +146,20 @@ fi
 - **Build scripts (Q25):** `pimd-cli` has its own `build.rs` (std only, no-op without the feature) emitting the rpath and `--no-as-needed` link arguments, since `cargo:rustc-link-arg` does not reach dependent crates. Both `build.rs` files and `src/deterministic.cpp` are real code from Phase A; the implementer may change them.
 - **Long test model (Q26):** `PIMD_MACE_MODEL` names the MACE `.model` file (e.g. `ff_models/mace_off23/MACE-OFF23_small.model`); the long test exports it into a temporary directory with `export_mace.py`, so both sides use the same weights and nothing derived is written into the repository.
 
+### After review (owner, 2026-11-01)
+
+Review of 014fe5e: no blocking findings. Decisions, with tests added in `pimd-torch/tests/settings_evaluate.rs`, `settings_failed_load.rs`, `review_m6.rs` and `pimd-cli/tests/config_mace_review.rs`:
+
+- **S1:** libtorch keeps the intra-op thread count per OS thread, so `evaluate` sets `threads` again on the calling thread (P-6). The CLI was not affected (one thread loads and evaluates).
+- **S2:** the f32 cast (`CModule::to`, which panics on a libtorch error) is wrapped so that a panic becomes `Backend`. No dedicated test (the realistic trigger is GPU memory exhaustion at load).
+- **N1:** `src/deterministic.cpp` is `noexcept` with a try/catch around the call, so no C++ exception crosses into Rust; the `// SAFETY:` comment no longer claims thread safety (the flag is a plain bool; concurrent loads are a formal data race, as in PyTorch itself).
+- **N2:** `load` validates the file, the module and the atomic numbers before it changes any process-wide setting; a failed load leaves them unchanged.
+- **N4:** the `Config::from_toml_str` doc lists `CliError::Io` (the model file is read and hashed at parse time, Q24); a missing model file is tested. The hash describes the file as read at parse time; replacing it between parse and load is not detected.
+- **N5:** tests for L_min = 2·r_max exactly (rejected) and a CUDA index at or above the device count (`Backend`). A non-finite model output and an evaluate-time libtorch error stay untested (no model that produces them).
+- **N6 (Q27):** a float32 export is refused for `Dtype::F64` (`Backend`); it is accepted for `Dtype::F32`.
+- Left as they are: several `MacePotential`s in one process share the process-wide settings, last load wins (N3); with `Dtype::F32` absolute positions are rounded to f32 before the model takes differences, about 1e-6 Å for molecules within ~10 Å of the origin, inside the float32 tolerance (N7).
+- S3 (`validation/RESULTS.md`) is done at close-out.
+
 ### Mutant ideas
 
 eV/Å conversion missing or inverted; forces taken as the gradient (sign); beads mixed up in the batch (ptr offsets off by one bead); edge vector q_i − q_j (sign); edge shifts with the wrong sign; float32 cast applied to the outputs only; cutoff in Å used as bohr; species index by atomic number instead of position in the model's list; profiling executor left on; `deterministic` ignored; hash missing the model bytes or covering the path.
