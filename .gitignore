@@ -23,3 +23,6 @@ __pycache__/
 
 # Validation run outputs (validation/run_neon.py, validation/benchmark.sh)
 /validation/runs/
+
+# Study run outputs (trajectories, exports, logs); results/ is committed
+/studies/*/out/
