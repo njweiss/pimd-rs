@@ -7,6 +7,7 @@ use std::path::Path;
 use pimd_core::units::{BOHR_IN_ANGSTROM, HARTREE_IN_EV};
 use pimd_core::{Beads, Cell};
 use pimd_potentials::{Evaluation, Potential, PotentialError};
+use rayon::prelude::*;
 use tch::{CModule, IValue, Kind, TchError, Tensor};
 
 use crate::ffi;
@@ -64,6 +65,10 @@ pub struct MacePotential {
     kind: Kind,
     /// libtorch intra-op thread count, applied on the calling thread by every `evaluate`.
     threads: i32,
+    /// Edge buffers, cleared and refilled by every `evaluate`.
+    edges: Edges,
+    /// Input tensors that depend only on P, for the P of the last call.
+    constants: Option<Constants>,
 }
 
 impl MacePotential {
@@ -191,6 +196,8 @@ impl MacePotential {
             device,
             kind,
             threads: n_threads,
+            edges: Edges::default(),
+            constants: None,
         })
     }
 
@@ -199,45 +206,46 @@ impl MacePotential {
         self.r_max
     }
 
-    /// Runs the batched graph: positions `[P·N·3]` (Å), the edges, P graphs of N atoms.
-    /// Returns energies `[P]` (eV) and forces `[P·N·3]` (eV/Å).
+    /// Runs the batched graph: positions `[P·N·3]` (Å), the edges in `self.edges`, P graphs of
+    /// N atoms. Returns energies `[P]` (eV) and forces `[P·N·3]` (eV/Å).
     fn forward(
-        &self,
+        &mut self,
         pos_angstrom: &[f64],
-        edges: Edges,
         p: usize,
         n: usize,
     ) -> Result<(Vec<f64>, Vec<f64>), TchError> {
         let dev = self.device;
         let opts = (self.kind, dev);
+        if self.constants.as_ref().is_none_or(|c| c.p != p) {
+            self.constants = Some(Constants::new(&self.species, p, n, opts)?);
+        }
+        let c = self
+            .constants
+            .as_ref()
+            .ok_or_else(|| TchError::Convert("constant inputs missing".to_string()))?;
         let pn = (p * n) as i64;
-        let ne = edges.sender.len() as i64;
+        let ne = (self.edges.index.len() / 2) as i64;
         let positions = Tensor::f_from_slice(pos_angstrom)?
             .f_reshape([pn, 3])?
             .f_to_dtype_layout(opts, false, false)?;
-        let sp: Vec<i64> = (0..p).flat_map(|_| self.species.iter().copied()).collect();
-        let species = Tensor::f_from_slice(&sp)?.f_to(dev)?;
-        let mut ei = edges.sender;
-        ei.extend_from_slice(&edges.receiver);
-        let edge_index = Tensor::f_from_slice(&ei)?.f_reshape([2, ne])?.f_to(dev)?;
-        let shifts = Tensor::f_from_slice(&edges.shift)?
+        let edge_index = Tensor::f_from_slice(&self.edges.index)?
+            .f_reshape([2, ne])?
+            .f_to(dev)?;
+        let shifts = Tensor::f_from_slice(&self.edges.shift)?
             .f_reshape([ne, 3])?
             .f_to_dtype_layout(opts, false, false)?;
-        let unit_shifts = Tensor::f_from_slice(&edges.unit)?
+        let unit_shifts = Tensor::f_from_slice(&self.edges.unit)?
             .f_reshape([ne, 3])?
             .f_to_dtype_layout(opts, false, false)?;
-        let ptr: Vec<i64> = (0..=p).map(|b| (b * n) as i64).collect();
-        let ptr = Tensor::f_from_slice(&ptr)?.f_to(dev)?;
-        let cell = Tensor::f_zeros([p as i64, 3, 3], opts)?;
         let out = self.module.forward_is(&[
             IValue::Tensor(positions),
-            IValue::Tensor(species),
+            IValue::Tensor(c.species.shallow_clone()),
             IValue::Tensor(edge_index),
             IValue::Tensor(shifts),
-            IValue::Tensor(ptr),
+            IValue::Tensor(c.ptr.shallow_clone()),
             IValue::Bool(false),
             IValue::Tensor(unit_shifts),
-            IValue::Tensor(cell),
+            IValue::Tensor(c.cell.shallow_clone()),
         ])?;
         let to_vec = |v: &IValue| -> Result<Vec<f64>, TchError> {
             match v {
@@ -261,52 +269,117 @@ impl MacePotential {
     }
 }
 
-/// Edge list of the batch: atoms numbered within the batch (bead j holds jN … jN+N−1).
+/// Input tensors that depend only on P and the atoms: species `[P·N]`, ptr `[P+1]` and the
+/// (unread, virials off) cell `[P, 3, 3]`, on the model's device.
+struct Constants {
+    /// Bead count they were built for.
+    p: usize,
+    species: Tensor,
+    ptr: Tensor,
+    cell: Tensor,
+}
+
+impl Constants {
+    fn new(
+        species: &[i64],
+        p: usize,
+        n: usize,
+        opts: (Kind, tch::Device),
+    ) -> Result<Constants, TchError> {
+        let sp: Vec<i64> = (0..p).flat_map(|_| species.iter().copied()).collect();
+        let ptr: Vec<i64> = (0..=p).map(|b| (b * n) as i64).collect();
+        Ok(Constants {
+            p,
+            species: Tensor::f_from_slice(&sp)?.f_to(opts.1)?,
+            ptr: Tensor::f_from_slice(&ptr)?.f_to(opts.1)?,
+            cell: Tensor::f_zeros([p as i64, 3, 3], opts)?,
+        })
+    }
+}
+
+/// Edges of one bead: atoms numbered within the batch (bead j holds jN … jN+N−1).
 #[derive(Default)]
-struct Edges {
+struct BeadEdges {
     /// Sender i of each edge.
     sender: Vec<i64>,
     /// Receiver j of each edge.
     receiver: Vec<i64>,
-    /// Shift s per edge, Å, flat `[E, 3]` (edge vector q_j − q_i + s).
+    /// Shift s per edge, Å, flat `[E_b, 3]` (edge vector q_j − q_i + s).
     shift: Vec<f64>,
-    /// Shift in box lengths per edge (integers), flat `[E, 3]`.
+    /// Shift in box lengths per edge (integers), flat `[E_b, 3]`.
     unit: Vec<f64>,
 }
 
-/// P-6 edges: every ordered pair i ≠ j of the same bead with |q_j − q_i + s| < r_max, s the C-2
-/// minimum-image correction with a cell, 0 without. All in bohr; shifts returned in Å.
-fn build_edges(q: &Beads, cell: Option<&Cell>, r_max: f64) -> Edges {
-    let (p, n) = (q.n_beads(), q.n_atoms());
-    let r2 = r_max * r_max;
+/// Edge list of the batch, beads in order 0 … P−1; the buffers are reused between calls.
+#[derive(Default)]
+struct Edges {
+    /// Per-bead lists, built in parallel.
+    beads: Vec<BeadEdges>,
+    /// `[2, E]` flat: all senders, then all receivers.
+    index: Vec<i64>,
+    /// Shifts, Å, flat `[E, 3]`.
+    shift: Vec<f64>,
+    /// Shifts in box lengths, flat `[E, 3]`.
+    unit: Vec<f64>,
+}
+
+impl Edges {
+    /// P-6 edges: every ordered pair i ≠ j of the same bead with |q_j − q_i + s| < r_max, s the
+    /// C-2 minimum-image correction with a cell, 0 without. All in bohr; shifts stored in Å.
+    /// Beads are built in parallel and joined in bead order, so the result does not depend on
+    /// the thread count (D-3).
+    fn build(&mut self, q: &Beads, cell: Option<&Cell>, r_max: f64) {
+        let p = q.n_beads();
+        self.beads.resize_with(p, BeadEdges::default);
+        self.beads
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(b, e)| bead_edges(q, b, cell, r_max * r_max, e));
+        self.index.clear();
+        self.shift.clear();
+        self.unit.clear();
+        for e in &self.beads {
+            self.index.extend_from_slice(&e.sender);
+        }
+        for e in &self.beads {
+            self.index.extend_from_slice(&e.receiver);
+            self.shift.extend_from_slice(&e.shift);
+            self.unit.extend_from_slice(&e.unit);
+        }
+    }
+}
+
+/// The edges of bead `b` into `e` (cleared first); `r2` = r_max², bohr².
+fn bead_edges(q: &Beads, b: usize, cell: Option<&Cell>, r2: f64, e: &mut BeadEdges) {
+    let n = q.n_atoms();
     let l = cell.map_or([0.0; 3], Cell::lengths);
-    let mut e = Edges::default();
-    for b in 0..p {
-        for i in 0..n {
-            let qi = q.get(b, i);
-            for j in 0..n {
-                if i == j {
-                    continue;
-                }
-                let qj = q.get(b, j);
-                let d = [0, 1, 2].map(|k| qj[k] - qi[k]);
-                let v = cell.map_or(d, |c| c.min_image(d));
-                if v[0] * v[0] + v[1] * v[1] + v[2] * v[2] < r2 {
-                    // Shift in box lengths, computed only for kept edges (0 without a cell).
-                    let unit = match cell {
-                        Some(_) => [0, 1, 2].map(|k| ((v[k] - d[k]) / l[k]).round()),
-                        None => [0.0; 3],
-                    };
-                    e.sender.push((b * n + i) as i64);
-                    e.receiver.push((b * n + j) as i64);
-                    e.shift
-                        .extend((0..3).map(|k| unit[k] * l[k] * BOHR_IN_ANGSTROM));
-                    e.unit.extend_from_slice(&unit);
-                }
+    e.sender.clear();
+    e.receiver.clear();
+    e.shift.clear();
+    e.unit.clear();
+    for i in 0..n {
+        let qi = q.get(b, i);
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let qj = q.get(b, j);
+            let d = [0, 1, 2].map(|k| qj[k] - qi[k]);
+            let v = cell.map_or(d, |c| c.min_image(d));
+            if v[0] * v[0] + v[1] * v[1] + v[2] * v[2] < r2 {
+                // Shift in box lengths, computed only for kept edges (0 without a cell).
+                let unit = match cell {
+                    Some(_) => [0, 1, 2].map(|k| ((v[k] - d[k]) / l[k]).round()),
+                    None => [0.0; 3],
+                };
+                e.sender.push((b * n + i) as i64);
+                e.receiver.push((b * n + j) as i64);
+                e.shift
+                    .extend((0..3).map(|k| unit[k] * l[k] * BOHR_IN_ANGSTROM));
+                e.unit.extend_from_slice(&unit);
             }
         }
     }
-    e
 }
 
 impl Potential for MacePotential {
@@ -338,14 +411,14 @@ impl Potential for MacePotential {
                 value: self.r_max,
             });
         }
-        let edges = build_edges(positions, cell, self.r_max);
+        self.edges.build(positions, cell, self.r_max);
         let pos: Vec<f64> = positions
             .as_slice()
             .iter()
             .map(|x| x * BOHR_IN_ANGSTROM)
             .collect();
         let (e_ev, f_ev) = self
-            .forward(&pos, edges, p, n)
+            .forward(&pos, p, n)
             .map_err(|e| backend("MACE evaluation", e))?;
         if e_ev.len() != p || f_ev.len() != p * n * 3 {
             return Err(PotentialError::Backend(format!(
