@@ -191,8 +191,8 @@ fn integrator(config: &Config) -> Result<RingPolymerIntegrator, CliError> {
     )?)
 }
 
-/// The configured potential: LJ in-process, or the socket server once its clients have connected
-/// (K-1).
+/// The configured potential: LJ in-process, the socket server once its clients have connected
+/// (K-1), or a MACE export in-process (P-6, feature `torch`).
 fn potential(config: &Config) -> Result<Box<dyn Potential>, CliError> {
     Ok(match &config.potential {
         PotentialConfig::Lj(lj) => Box::new(LennardJones::new(*lj)?),
@@ -211,7 +211,37 @@ fn potential(config: &Config) -> Result<Box<dyn Potential>, CliError> {
             )?)
         }
         #[cfg(feature = "torch")]
-        PotentialConfig::Mace { .. } => unimplemented!("M6b: kind = \"mace\""),
+        PotentialConfig::Mace {
+            model,
+            device,
+            dtype,
+            threads,
+            deterministic,
+            ..
+        } => {
+            // Validated against `pimd_torch::atomic_number` by `Config::from_toml_str`; a
+            // hand-built config with bad symbols is refused here.
+            let symbols = config
+                .system
+                .symbols
+                .as_deref()
+                .ok_or_else(|| CliError::Parse("missing field `symbols`".to_string()))?;
+            let z = symbols
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    pimd_torch::atomic_number(s).ok_or_else(|| invalid("system.symbols", i as f64))
+                })
+                .collect::<Result<Vec<u8>, CliError>>()?;
+            Box::new(pimd_torch::MacePotential::load(
+                model,
+                &z,
+                *device,
+                *dtype,
+                *threads,
+                *deterministic,
+            )?)
+        }
     })
 }
 
