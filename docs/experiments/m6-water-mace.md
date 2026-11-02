@@ -142,4 +142,34 @@ on CPU.
 
 ## Log
 
-(empty: the plan comes first)
+All runs on the owner's machine (12 logical CPUs, RTX 4060 8 GB, WSL2 kernel 5.15.167.4), from the
+repository root, engine `target/release/pimd-rs` built from `milestone-6` at 1aa9d77 (= `main`
+9c6096b plus this plan) with `--features torch`, run inside `pixi run -e ml`. Versions as
+`validation/RESULTS.md` (M5, M6b rows). MACE-OFF23 small exported with
+`crates/pimd-torch/scripts/export_mace.py` (float64) to `ff_models/exports/m6c-off23-small-f64.pt`
+(7 453 483 bytes, sha256 6263f856…c60; model file sha256 165cce4c…46f).
+
+### 2026-11-02 09:37 Pilot (`configs/pilot/`, `run.sh`; outputs `out/pilot/`)
+
+2 200 steps per run (200 equilibration + 2 000), H₂O, seeds as the plan. Round 1: the five CPU MACE
+runs and P = 32 on CUDA at once (6 processes, load average 0.16 at start); round 2: P = 16 on CUDA
+and the two xTB runs at once. Wall time per step including start-up:
+
+| Run | ms/step | Run | ms/step |
+|---|---|---|---|
+| MACE P = 1, CPU | 19.3 | MACE P = 16, CUDA | 34.1 |
+| MACE P = 4, CPU | 45.2 | MACE P = 32, CUDA | 55.4 |
+| MACE P = 8, CPU | 80.5 | xTB P = 1 (4 clients) | 1.2 |
+| MACE P = 16, CPU | 154.7 | xTB P = 32 (4 clients) | 7.1 |
+| MACE P = 32, CPU | 270.2 | | |
+
+All runs completed; CPU and CUDA runs with the same seed give the same mean E_vir, E_prim and V̄
+to the 5 decimals printed (2 000 steps; mean T_est 297–299 K for P ≥ 4, 333 K at P = 1, 285 K for
+xTB P = 1: one 1-ps run of 3 atoms). Unconverged first look: E_vir(P = 32) − E_vir(P = 1) ≈
+0.0172 Eh (MACE), 0.0166 Eh (xTB).
+
+**Production lengths (fixed here, before any production run):** the default, 200 000 production
+steps (100 ps) after 20 000 equilibration steps, for every run. Estimated wall time: wave A (H₂O
+MACE P = 1, 4, 8, 16 on CPU and both P = 32 seeds on CUDA, 6 processes) ≈ 9.5 h, limited by
+P = 16 on CPU; wave B (D₂O and HDO at P = 1 on CPU and P = 32 on CUDA, xTB P = 1 and 32) ≈ 3.5 h
+if the CUDA runs do not slow each other down by much. Total ≈ 13–15 h, within the 48 h budget.
