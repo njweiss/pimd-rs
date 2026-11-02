@@ -12,7 +12,7 @@ Proposed resolution:
 Owner decision:
 ```
 
-Number new entries from Q27. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
+Number new entries from Q28. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
 brief, it moves to the index below; the full text stays in git history.
 
 ## Resolved (index)
@@ -47,3 +47,4 @@ Code and tests cite these numbers. Each decision now lives where the last column
 | Q24 | `PotentialConfig::Mace { model, device, dtype, threads, deterministic }` (feature `torch` only; "cuda" = device 0); bad strings are `InvalidValue` or `Parse` naming the field; when the model bytes are hashed is the implementer's choice | MILESTONE_6 "Clarifications" |
 | Q25 | `pimd-cli` has its own `build.rs` with libtorch's rpath and `--no-as-needed` (link args do not propagate to dependent crates) | MILESTONE_6 "Clarifications" |
 | Q26 | `PIMD_MACE_MODEL` names the MACE `.model` file; the long test exports it to a temporary directory | MILESTONE_6 "Clarifications" |
+| Q27 | A float32 export is refused for `Dtype::F64` (`Backend`); found in M6b review (N6) | SPEC P-6; MILESTONE_6 "After review" |
