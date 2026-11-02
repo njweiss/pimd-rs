@@ -1,6 +1,6 @@
 # Milestone 6: In-process torch backend, MACE-OFF23, gas-phase ML-RPMD
 
-Status: **M6a done; M6b section amended after the spike (2026-11-01), pending owner approval**. M6c stays as drafted. Three phases, run in order:
+Status: **approved (2026-11-01)**: M6a done; M6b amended after the spike and approved; M6c as drafted. Three phases, run in order:
 
 | Phase | Flow | Output |
 | --- | --- | --- |
@@ -157,7 +157,7 @@ Training or fine-tuning (CLAUDE.md "Do not"); shipping MACE-OFF23 weights or exp
 ## Acceptance
 
 - [x] M6a: spike log and writeup committed
-- [ ] M6a: owner decision on the backend recorded (SPEC §12 closed); this brief amended and approved
+- [x] M6a: owner decision on the backend recorded (SPEC §12 closed); this brief amended and approved
 - [ ] M6b: all tests pass; `check.sh` exits 0 (default and `CHECK_TORCH=1`), including thread-count runs
 - [ ] M6b: long validation passes; agreement levels added to `validation/RESULTS.md`
 - [ ] M6b: review done; no blocking findings; `QUESTIONS.md` has no open entries
