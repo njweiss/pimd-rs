@@ -242,3 +242,13 @@ smaller for heavier isotopes: the pattern of a finite-dt bias of the integrator 
 estimators feel differently, not yet shown. Per the plan ("stop and investigate"), the
 interpretation of the P = 32 energies waits for the investigation. The M5 xTB P = 16 run showed the
 same sign (E_vir − E_prim = +7.7e-5 from the published means).
+
+### 2026-11-03 Time-step check, plan (owner approved; `configs/dtcheck/`, `make_configs.py dtcheck`)
+
+To decide between a finite-dt bias and an engine defect: H₂O xTB P = 32 at dt = 0.25 fs (seed 1432)
+and 0.125 fs (seed 1532), otherwise the production protocol, the same simulated times (10 ps
+equilibration, 100 ps production) and trajectory spacing (5 fs). Expectation if it is an O(dt²)
+integrator bias: E_vir − E_prim ≈ +8e-5 Eh at dt/2 and ≈ +2e-5 at dt/4 (from +3.27e-4 at 0.5 fs),
+and the dt dependence of each estimator shows which one is closer to the dt → 0 limit. If the
+difference does not shrink with dt: an engine question (QUESTIONS.md), not part of this study. Both
+runs at once (8 xTB clients); estimated ≈ 2 h wall.
