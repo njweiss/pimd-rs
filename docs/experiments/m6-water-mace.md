@@ -201,3 +201,44 @@ same r_e (differ by 0.0008 bohr), so the hypothesis "MACE gives a shorter ⟨r_O
 would have to come from anharmonicity, not from the minimum; GFN2-xTB's θ_e is 2.3° wider. The
 harmonic quantum−classical difference at P = ∞ is 0.0186 Eh (MACE) and 0.0173 Eh (xTB); the
 harmonic D₂O/H₂O ratio of that difference is 0.69 (MACE).
+
+### 2026-11-02 09:49 – 23:56 Production (`configs/production/`; `out/production.log`)
+
+All 12 runs completed with 200 000 production steps after 20 000 equilibration steps. Wave A
+09:49–17:19 (7.5 h; H₂O P = 16 on CPU the longest, 27 019 s), wave B 17:19–23:56 (6.6 h). Total
+14.1 h. The two concurrent CUDA P = 32 runs of each wave took 23 942 s and 23 806 s each
+(≈ 109 ms/step), twice the 55 ms/step of the pilot's single CUDA run: concurrent CUDA runs on the
+RTX 4060 share it rather than overlap.
+
+### 2026-11-03 00:00 Analysis (`analyse.py`; `results/summary.json`, `results/runs.csv`, `results/fig_*.png`)
+
+Per molecule, E − V_min of the model, σ from 2-ps / 8-ps blocks (larger); ⟨r⟩ in bohr, ⟨θ⟩ in °:
+
+| Run | ⟨E_vir⟩ | ⟨E_prim⟩ | Harmonic | ⟨r_OH⟩ | ⟨θ_HOH⟩ |
+|---|---|---|---|---|---|
+| H₂O MACE P = 1 | 0.005725(15) | 0.005725(15) | 0.005700 | 1.81737(6) | 104.900(14) |
+| P = 4 | 0.012496(35) | 0.012544(36) | 0.012500 | 1.82700(9) | 104.941(17) |
+| P = 8 | 0.017627(27) | 0.017599(50) | 0.017740 | 1.83507(8) | 104.848(17) |
+| P = 16 | 0.021562(28) | 0.021454(40) | 0.021796 | 1.84128(8) | 104.768(19) |
+| P = 32 | 0.023315(27) | 0.023000(53) | 0.023587 | 1.84391(7) | 104.738(19) |
+| P = 32 seed 2 | 0.023289(27) | 0.022939(48) | 0.023587 | 1.84375(8) | 104.761(18) |
+| H₂O xTB P = 1 | 0.005730(16) | 0.005730(16) | 0.005700 | 1.81921(9) | 107.167(22) |
+| P = 32 | 0.022109(27) | 0.021782(45) | 0.022368 | 1.85184(11) | 107.070(22) |
+| D₂O MACE P = 1 | 0.005712(18) | 0.005712(18) | 0.005700 | 1.81718(9) | 104.892(24) |
+| P = 32 | 0.018046(25) | 0.017892(49) | 0.018205 | 1.83640(9) | 104.734(19) |
+| HDO MACE P = 1 | 0.005748(19) | 0.005748(19) | 0.005700 | OH 1.81739(14), OD 1.81745(11) | 104.874(16) |
+| P = 32 | 0.020736(23) | 0.020511(51) | 0.020933 | OH 1.84406(11), OD 1.83639(12) | 104.756(20) |
+
+Mean T_est 297.4–302.0 K. Seed check (H₂O MACE P = 32, seed 1 − seed 2): E_vir +2.6e-5 ± 3.8e-5
+(0.7σ), r_OH +1.7e-4 ± 1.1e-4 (1.5σ), θ −0.02 ± 0.03° (0.9σ): passes.
+
+**Engine-consistency check fails at P = 32.** ⟨E_vir⟩ − ⟨E_prim⟩ (σ from the blocks of the
+difference series, since both come from one trajectory; the first version of `analyse.py` combined
+the two σ in quadrature, changed here): H₂O MACE P = 4 −4.8e-5 ± 3.1e-5 (−1.5σ), P = 8 +2.8e-5 ±
+4.3e-5, P = 16 +1.08e-4 ± 4.7e-5 (2.3σ), **P = 32 +3.15e-4 ± 6.3e-5 (5.0σ), seed 2 +3.50e-4 ±
+5.0e-5 (7.0σ); xTB P = 32 +3.27e-4 ± 4.1e-5 (8.0σ)**; D₂O P = 32 +1.54e-4 ± 4.8e-5 (3.2σ), HDO
+P = 32 +2.24e-4 ± 4.9e-5 (4.6σ). The difference grows with P, is the same for both models, and is
+smaller for heavier isotopes: the pattern of a finite-dt bias of the integrator that the two
+estimators feel differently, not yet shown. Per the plan ("stop and investigate"), the
+interpretation of the P = 32 energies waits for the investigation. The M5 xTB P = 16 run showed the
+same sign (E_vir − E_prim = +7.7e-5 from the published means).
