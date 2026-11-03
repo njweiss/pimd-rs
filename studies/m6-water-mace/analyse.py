@@ -38,6 +38,8 @@ RUNS = {  # name: (species, model, P)
     "h2o_xtb_p1": ("h2o", "xtb", 1), "h2o_xtb_p32": ("h2o", "xtb", 32),
     **{f"{s}_mace_p{p}": (s, "mace", p) for s in ("d2o", "hdo") for p in (1, 32)},
 }
+# Time-step check (log 2026-11-03): H2O xTB P = 32 in out/dtcheck/, name: (dt fs, trajectory_every).
+DTCHECK = {"h2o_xtb_p32_dt0.25": (0.25, 20), "h2o_xtb_p32_dt0.125": (0.125, 40)}
 
 
 def block_sigma(x, block):
@@ -69,15 +71,15 @@ def read_traj(path, p):
     return xyz.reshape(nf, p, 3, 3) / BOHR_IN_ANGSTROM
 
 
-def analyse_run(name, species, model, p, vmin):
-    d = OUT / name
+def analyse_run(name, species, model, p, vmin, out=None, dt=DT_FS, traj_every=TRAJ_EVERY):
+    d = (out or OUT) / name
     obs = d / "observables.csv"
     if not obs.exists() or not (d / "wall.txt").exists():
         print(f"skip {name}: not finished")
         return None
     rows = list(csv.DictReader(obs.open()))
     col = lambda k: np.array([3.0 * float(r[k]) for r in rows])  # per atom → per molecule
-    block = int(BLOCK_PS * 1000 / DT_FS)
+    block = int(BLOCK_PS * 1000 / dt)
     res = {"species": species, "model": model, "p": p, "n_steps": len(rows),
            "e_vir": stat(col("e_vir_eh") - vmin, block), "e_prim": stat(col("e_prim_eh") - vmin, block),
            "v": stat(col("v_eh") - vmin, block),
@@ -87,7 +89,7 @@ def analyse_run(name, species, model, p, vmin):
     b1, b2 = x[:, :, 1] - x[:, :, 0], x[:, :, 2] - x[:, :, 0]
     r1, r2 = np.linalg.norm(b1, axis=2), np.linalg.norm(b2, axis=2)  # [frames, P]
     theta = np.degrees(np.arccos(np.clip((b1 * b2).sum(axis=2) / (r1 * r2), -1, 1))).mean(axis=1)
-    fb = block // TRAJ_EVERY
+    fb = block // traj_every
     if species == "hdo":
         res["r_od"] = stat(r1.mean(axis=1), fb)
         res["r_oh"] = stat(r2.mean(axis=1), fb)
@@ -120,7 +122,14 @@ def main():
             r["e_vir_minus_harmonic"] = r["e_vir"][0] - r["harmonic_e"]
             runs[name] = r
 
+    dtruns = {0.5: runs.get("h2o_xtb_p32")}
+    for name, (dt, te) in DTCHECK.items():
+        dtruns[dt] = analyse_run(name, "h2o", "xtb", 32, harm["xtb"]["v_min_eh"], HERE / "out" / "dtcheck", dt, te)
+    dtruns = {dt: r for dt, r in dtruns.items() if r}
+
     checks, comp = {}, {}
+    if len(dtruns) == 3:
+        comp["dt check, xtb P = 32"] = dt_check(dtruns)
     for name, r in runs.items():
         # One trajectory: σ from the blocks of the difference series (the estimators are correlated).
         m, sd = r["e_vir_minus_e_prim"]
@@ -163,6 +172,22 @@ def main():
     for k, v in checks.items():
         print(f"check {k}: {v[0]:+.2e} ± {v[1]:.1e} ({v[2]:+.2f} σ)")
     print(json.dumps(comp, indent=1))
+
+
+def dt_check(dtruns):
+    """Per estimator: values at each dt and a weighted fit a + b·dt² (dt in fs), with a ± σ_a."""
+    out = {"dt_fs": sorted(dtruns)}
+    for k in ("e_vir", "e_prim", "e_vir_minus_e_prim", "r_oh", "theta"):
+        dts = sorted(dtruns)
+        y = np.array([dtruns[dt][k][0] for dt in dts])
+        s = np.array([dtruns[dt][k][1] for dt in dts])
+        a = np.vstack([np.ones(len(dts)), np.array(dts) ** 2]).T / s[:, None]
+        coef, *_ = np.linalg.lstsq(a, y / s, rcond=None)
+        cov = np.linalg.inv(a.T @ a)
+        chi2 = float(np.sum(((a @ coef) - y / s) ** 2))
+        out[k] = {"values": [[float(v), float(e)] for v, e in zip(y, s)], "dt0": [float(coef[0]), float(math.sqrt(cov[0, 0]))],
+                  "slope_per_fs2": [float(coef[1]), float(math.sqrt(cov[1, 1]))], "chi2_1dof": chi2}
+    return out
 
 
 def figures(runs, harm):
