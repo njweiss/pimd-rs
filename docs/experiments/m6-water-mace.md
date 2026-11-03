@@ -252,3 +252,34 @@ integrator bias: E_vir − E_prim ≈ +8e-5 Eh at dt/2 and ≈ +2e-5 at dt/4 (fr
 and the dt dependence of each estimator shows which one is closer to the dt → 0 limit. If the
 difference does not shrink with dt: an engine question (QUESTIONS.md), not part of this study. Both
 runs at once (8 xTB clients); estimated ≈ 2 h wall.
+
+### 2026-11-03 12:13 – 13:27 Time-step check, result (`out/dtcheck.log`; `results/summary.json` "dt check")
+
+Both runs completed (400 000 and 800 000 production steps; 2 504 s and 4 411 s wall, at once). H₂O
+xTB P = 32, E − V_min in Eh, with a weighted fit a + b·dt² over the three time steps (dt in fs):
+
+| dt (fs) | ⟨E_vir⟩ | ⟨E_prim⟩ | E_vir − E_prim | ⟨r_OH⟩ (bohr) | ⟨θ⟩ (°) |
+|---|---|---|---|---|---|
+| 0.5 (production) | 0.022109(27) | 0.021782(45) | +3.27(41)e-4 | 1.85184(11) | 107.070(22) |
+| 0.25 | 0.021963(20) | 0.021899(53) | +0.64(55)e-4 | 1.85154(10) | 107.054(20) |
+| 0.125 | 0.022005(27) | 0.021994(39) | +0.11(38)e-4 | 1.85161(8) | 107.071(17) |
+| fit, dt → 0 | 0.021955(20) | 0.021991(36) | −0.13(36)e-4 | 1.85155(7) | 107.064(15) |
+| fit slope b (per fs²) | +5.7(1.5)e-4 | −8.6(2.5)e-4 | +1.36(23)e-3 | +1.1(6)e-3 | +0.01(12) |
+| χ² (1 dof) | 4.47 | 0.71 | 0.03 | 0.92 | 0.46 |
+
+**Finding: the E_vir/E_prim disagreement at P = 32 is a finite-time-step bias, not an engine
+defect.** E_vir − E_prim falls as dt² (+6.4e-5 and +1.1e-5 against the +8e-5 and +2e-5 expected
+from +3.27e-4) and extrapolates to −1.3e-5 ± 3.6e-5, i.e. zero; at dt → 0 the two estimators
+agree (0.9σ). Both estimators carry an O(dt²) bias, of opposite sign: at 0.5 fs E_vir is high by
++1.4(4)e-4 Eh and E_prim low by −2.1(6)e-4 Eh (≈ 0.9 % and 1.3 % of the quantum−classical
+difference); the virial estimator is the less biased one. The E_vir fit has χ² = 4.47 for one
+degree of freedom (the 0.25 fs point sits 1.5σ below the 0.125 fs one), so its slope is less
+certain than the σ suggests. r_OH: bias at 0.5 fs +2.8(1.4)e-4 bohr, 1 % of the quantum expansion;
+θ: none resolved.
+
+Consequence for the study: the harmonic comparison (Q2) at P = 32 depends on this bias. xTB at
+dt → 0: E − harmonic = 0.021955 − 0.022368 = −4.1(2)e-4 Eh (−2.5 % of the harmonic
+quantum−classical difference) instead of −2.6e-4 at 0.5 fs. For MACE the same size of correction
+is likely (similar frequencies) but not measured; the plan's rule ("a MACE energy difference of
+interest below 3 × 1.6e-4 Eh adds one dt/2 run at P = 32") applies, since the MACE anharmonic
+difference at P = 32 is −2.7e-4 Eh.
