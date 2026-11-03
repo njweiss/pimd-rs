@@ -81,6 +81,7 @@ def analyse_run(name, species, model, p, vmin):
     res = {"species": species, "model": model, "p": p, "n_steps": len(rows),
            "e_vir": stat(col("e_vir_eh") - vmin, block), "e_prim": stat(col("e_prim_eh") - vmin, block),
            "v": stat(col("v_eh") - vmin, block),
+           "e_vir_minus_e_prim": stat(col("e_vir_eh") - col("e_prim_eh"), block),
            "t_est_k": stat([float(r["t_est_k"]) for r in rows], block)}
     x = read_traj(d / "trajectory.xyz", p)
     b1, b2 = x[:, :, 1] - x[:, :, 0], x[:, :, 2] - x[:, :, 0]
@@ -121,7 +122,9 @@ def main():
 
     checks, comp = {}, {}
     for name, r in runs.items():
-        checks[f"{name}: e_vir − e_prim"] = diff(r["e_vir"], r["e_prim"])
+        # One trajectory: σ from the blocks of the difference series (the estimators are correlated).
+        m, sd = r["e_vir_minus_e_prim"]
+        checks[f"{name}: e_vir − e_prim"] = [m, sd, m / sd if sd > 0 else 0.0]
     if {"h2o_mace_p32", "h2o_mace_p32_seed2"} <= runs.keys():
         for k in ("e_vir", "r_oh", "theta"):
             checks[f"h2o_mace_p32 seed 1 − seed 2: {k}"] = diff(runs["h2o_mace_p32"][k], runs["h2o_mace_p32_seed2"][k])
