@@ -283,3 +283,10 @@ quantum−classical difference) instead of −2.6e-4 at 0.5 fs. For MACE the sam
 is likely (similar frequencies) but not measured; the plan's rule ("a MACE energy difference of
 interest below 3 × 1.6e-4 Eh adds one dt/2 run at P = 32") applies, since the MACE anharmonic
 difference at P = 32 is −2.7e-4 Eh.
+
+### 2026-11-03 MACE time-step run, plan (owner approved)
+
+H₂O MACE P = 32 at dt = 0.25 fs, seed 3032, CUDA float64, 40 000 + 400 000 steps (10 + 100 ps),
+trajectory every 20 steps (`configs/dtcheck/h2o_mace_p32_dt0.25.toml`). Alone on the machine;
+estimated ≈ 7 h (55 ms/step, pilot). Compared with the two 0.5 fs seeds through E − harmonic and
+an a + b·dt² estimate from two time steps (no χ² possible).
