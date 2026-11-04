@@ -1,4 +1,4 @@
-//! Ring-polymer state, BAOAB integrator with PILE-L (SPEC I-1 … I-5, T-1 … T-3).
+//! Ring-polymer state, BAOAB integrator with PILE-L and TRPMD (SPEC I-1 … I-5, T-1 … T-4, Y-1, Y-2).
 
 use pimd_core::{Beads, Cell, NormalModes, Rng, Transform};
 use pimd_potentials::{Evaluation, Potential};
@@ -62,7 +62,8 @@ impl RingPolymerIntegrator {
     /// Integrator with time step `dt` (ħ/Eh), inverse temperature `beta` (Eh⁻¹) and `n_beads` = P.
     ///
     /// Errors: `IntegratorError::InvalidValue` unless dt (I-5) and β are positive and finite, and
-    /// τ_0 is positive and finite when given; `IntegratorError::Core` for P = 0.
+    /// τ_0 (T-2) is positive and finite when given, and λ (T-4) is positive and finite;
+    /// `IntegratorError::Core` for P = 0.
     pub fn new(
         dt: f64,
         beta: f64,
@@ -86,27 +87,9 @@ impl RingPolymerIntegrator {
     ) -> Result<Self, IntegratorError> {
         positive_finite("dt (hbar/Eh)", dt)?;
         positive_finite("beta (1/Eh)", beta)?;
-        let gamma0 = match thermostat {
-            Thermostat::Off => None,
-            Thermostat::PileL { tau0: None } => Some(0.0),
-            Thermostat::PileL { tau0: Some(tau0) } => {
-                Some(1.0 / positive_finite("tau0 (hbar/Eh)", tau0)?)
-            }
-            Thermostat::Trpmd { .. } => unimplemented!("M7: T-4"),
-        };
+        let gammas = friction(thermostat)?;
         let modes = NormalModes::with_transform(n_beads, beta, transform)?;
-        // T-2: γ_0 = 1/τ_0 (or 0), γ_k = 2 ω_k for ω_k > 0; T-1: c_k = exp(−γ_k dt).
-        let c_k = gamma0.map(|gamma0| {
-            modes
-                .frequencies()
-                .iter()
-                .enumerate()
-                .map(|(k, &w)| {
-                    let gamma = if k == 0 { gamma0 } else { 2.0 * w };
-                    (-gamma * dt).exp()
-                })
-                .collect()
-        });
+        let c_k = gammas.map(|g| ou_coefficients(g, &modes, dt));
         Ok(RingPolymerIntegrator {
             dt,
             beta,
@@ -216,6 +199,35 @@ impl RingPolymerIntegrator {
             }
         }
     }
+}
+
+/// Friction rule (γ_0, scale of ω_k for k ≥ 1) of `thermostat`, or `None` for `Off`:
+/// T-2 for PILE-L (γ_0 = 1/τ_0 or 0, γ_k = 2ω_k), T-4 for TRPMD (γ_0 = 0, γ_k = 2λω_k).
+///
+/// Errors: `IntegratorError::InvalidValue` for τ_0 or λ not positive and finite.
+fn friction(thermostat: Thermostat) -> Result<Option<(f64, f64)>, IntegratorError> {
+    Ok(match thermostat {
+        Thermostat::Off => None,
+        Thermostat::PileL { tau0: None } => Some((0.0, 2.0)),
+        Thermostat::PileL { tau0: Some(tau0) } => {
+            Some((1.0 / positive_finite("tau0 (hbar/Eh)", tau0)?, 2.0))
+        }
+        Thermostat::Trpmd { lambda } => Some((0.0, 2.0 * positive_finite("lambda", lambda)?)),
+    })
+}
+
+/// c_k = exp(−γ_k dt) per mode (T-1), aligned with the `modes` columns, for the friction rule
+/// `(γ_0, s)` of `friction`: γ_0 for k = 0, γ_k = s·ω_k otherwise.
+fn ou_coefficients((gamma0, s): (f64, f64), modes: &NormalModes, dt: f64) -> Vec<f64> {
+    modes
+        .frequencies()
+        .iter()
+        .enumerate()
+        .map(|(k, &w)| {
+            let gamma = if k == 0 { gamma0 } else { s * w };
+            (-gamma * dt).exp()
+        })
+        .collect()
 }
 
 /// `IntegratorError::ShapeMismatch` unless `ev` has forces of shape `[p, n, 3]` and `p`
@@ -374,15 +386,24 @@ impl RingPolymerSim {
     /// Errors: `IntegratorError::InvalidValue` for a bad τ_0 or λ (as `RingPolymerIntegrator::new`);
     /// the simulation is then unchanged.
     pub fn set_thermostat(&mut self, thermostat: Thermostat) -> Result<(), IntegratorError> {
-        let _ = thermostat;
-        unimplemented!("M7: Y-1")
+        let ig = &mut self.integrator;
+        ig.c_k = friction(thermostat)?.map(|g| ou_coefficients(g, &ig.modes, ig.dt));
+        Ok(())
     }
 
     /// Redraws every bead momentum from N(0, m_i·P/β) (Y-2): atom i outer, bead j, dimension d
     /// inner; P·N·3 normal draws. Positions, forces and energies unchanged.
     pub fn resample_momenta(&mut self, rng: &mut Rng) {
-        let _ = rng;
-        unimplemented!("M7: Y-2")
+        let pf = self.integrator.modes.n_beads() as f64;
+        let beta = self.integrator.beta;
+        let p = &mut self.state.p;
+        for (i, &m) in self.state.masses.iter().enumerate() {
+            let sd = (m * pf / beta).sqrt();
+            for j in 0..p.n_beads() {
+                let v = [sd * rng.normal(), sd * rng.normal(), sd * rng.normal()];
+                p.set(j, i, v);
+            }
+        }
     }
 
     /// The current state (bead representation).

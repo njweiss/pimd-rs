@@ -7,7 +7,7 @@ use thiserror::Error;
 /// Errors returned by integrator constructors and `step`.
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum IntegratorError {
-    /// A scalar argument was out of range or non-finite (dt, β, τ₀).
+    /// A scalar argument was out of range or non-finite (dt, β, τ₀, λ).
     #[error("invalid {what}: {value}")]
     InvalidValue {
         /// Name of the offending argument.

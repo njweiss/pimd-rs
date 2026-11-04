@@ -162,7 +162,11 @@ impl Config {
     /// wrongly typed values; `CliError::InvalidValue` (naming the field) for out-of-range values,
     /// including `n_beads = 0` and `cutoff + skin > L_min/2` (C-4); `CliError::Io` (naming
     /// `potential.model` and the path) for a model file that cannot be read (kind = "mace": the
-    /// file is read and hashed at parse time, Q24).
+    /// file is read and hashed at parse time, Q24). With `[dynamics]` (MILESTONE_7, Q29): a
+    /// `trpmd_lambda` with method = "rpmd", an unknown method or key are `Parse` naming the key;
+    /// range rules are `InvalidValue` naming `dynamics.<key>` (a segment_steps that is not a
+    /// multiple of corr_stride names `dynamics.segment_steps`); `n_steps` and `checkpoint_every`
+    /// not multiples of the cycle name `sampling.n_steps` and `output.checkpoint_every`.
     pub fn from_toml_str(s: &str) -> Result<Config, CliError> {
         let raw: RawConfig = toml::from_str(s).map_err(|e| CliError::Parse(e.to_string()))?;
         raw.validate()
@@ -173,8 +177,9 @@ impl Config {
     /// kind = "mace") and the socket's `address`, `n_clients` and `timeout_s`; `[output]` is not
     /// covered (MILESTONE_4 "Restart determinism", MILESTONE_5 "Config hash"). For kind = "mace"
     /// it covers the model file's bytes (not its path), the device kind (not the index), dtype,
-    /// threads, deterministic and the symbols (MILESTONE_6 "Config"). A checkpoint restarts only
-    /// under a config with the same hash.
+    /// threads, deterministic and the symbols (MILESTONE_6 "Config"). With `[dynamics]`, every one
+    /// of its fields is appended (MILESTONE_7); without it the hash is the M6 value. A checkpoint
+    /// restarts only under a config with the same hash.
     pub(crate) fn hash(&self) -> u64 {
         let (sy, sa) = (&self.system, &self.sampling);
         let mut bytes = Vec::new();
@@ -253,6 +258,21 @@ impl Config {
             Transform::Matrix => 0,
             Transform::Fft => 1,
         });
+        // MILESTONE_7: `[dynamics]` enters only when present, after everything above, so the
+        // hash of a config without it is unchanged.
+        if let Some(dy) = &self.dynamics {
+            match dy.method {
+                DynamicsMethod::Rpmd => u(0),
+                DynamicsMethod::Trpmd { lambda } => {
+                    u(1);
+                    u(lambda.to_bits());
+                }
+            }
+            u(dy.decorrelation_steps as u64);
+            u(dy.segment_steps as u64);
+            u(dy.corr_stride as u64);
+            u(dy.n_lags as u64);
+        }
         fnv1a(&bytes)
     }
 }
@@ -275,7 +295,85 @@ struct RawConfig {
     potential: RawPotential,
     sampling: RawSampling,
     output: RawOutput,
-    dynamics: Option<toml::Value>,
+    dynamics: Option<RawDynamics>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum RawMethod {
+    Rpmd,
+    Trpmd,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDynamics {
+    method: RawMethod,
+    trpmd_lambda: Option<f64>,
+    decorrelation_steps: usize,
+    segment_steps: usize,
+    corr_stride: usize,
+    n_lags: usize,
+}
+
+impl RawDynamics {
+    /// The field rules of MILESTONE_7 "Config format" / "Clarifications" (Q29). `n_steps` and
+    /// `checkpoint_every` must be multiples of the cycle c = decorrelation_steps + segment_steps;
+    /// `n_atoms` sizes the per-segment sample buffer (Q17).
+    fn validate(
+        self,
+        n_atoms: usize,
+        n_steps: usize,
+        checkpoint_every: usize,
+    ) -> Result<DynamicsConfig, CliError> {
+        let method = match (self.method, self.trpmd_lambda) {
+            (RawMethod::Rpmd, None) => DynamicsMethod::Rpmd,
+            (RawMethod::Rpmd, Some(_)) => {
+                return Err(CliError::Parse(
+                    "dynamics: `trpmd_lambda` does not belong to method = \"rpmd\"".to_string(),
+                ));
+            }
+            (RawMethod::Trpmd, lambda) => DynamicsMethod::Trpmd {
+                lambda: positive("dynamics.trpmd_lambda", lambda.unwrap_or(0.5))?,
+            },
+        };
+        let corr_stride = at_least_one("dynamics.corr_stride", self.corr_stride)?;
+        let segment_steps = at_least_one("dynamics.segment_steps", self.segment_steps)?;
+        if !segment_steps.is_multiple_of(corr_stride) {
+            return Err(invalid("dynamics.segment_steps", segment_steps as f64));
+        }
+        // Y-3: L = segment_steps/corr_stride + 1 samples per segment.
+        let l = segment_steps / corr_stride + 1;
+        // Q17: the segment's L·N·3 samples must be allocatable.
+        if !fits_f64s(l.checked_mul(n_atoms).and_then(|n| n.checked_mul(3))) {
+            return Err(invalid("dynamics.segment_steps", segment_steps as f64));
+        }
+        if self.n_lags == 0 || self.n_lags > l {
+            return Err(invalid("dynamics.n_lags", self.n_lags as f64));
+        }
+        let cycle = self
+            .decorrelation_steps
+            .checked_add(segment_steps)
+            .ok_or_else(|| {
+                invalid(
+                    "dynamics.decorrelation_steps",
+                    self.decorrelation_steps as f64,
+                )
+            })?;
+        if !n_steps.is_multiple_of(cycle) {
+            return Err(invalid("sampling.n_steps", n_steps as f64));
+        }
+        if !checkpoint_every.is_multiple_of(cycle) {
+            return Err(invalid("output.checkpoint_every", checkpoint_every as f64));
+        }
+        Ok(DynamicsConfig {
+            method,
+            decorrelation_steps: self.decorrelation_steps,
+            segment_steps,
+            corr_stride,
+            n_lags: self.n_lags,
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -456,10 +554,6 @@ impl RawConfig {
             output: out,
             dynamics: dy,
         } = self;
-        if dy.is_some() {
-            unimplemented!("M7: [dynamics]");
-        }
-
         let n_atoms = at_least_one("system.n_atoms", sy.n_atoms)?;
         let n_beads = at_least_one("sampling.n_beads", sa.n_beads)?;
         // Q17: sizes that cannot be allocated, checked before anything of that size is.
@@ -655,6 +749,10 @@ impl RawConfig {
                 .transpose()?,
         };
 
+        let dynamics = dy
+            .map(|d| d.validate(n_atoms, sampling.n_steps, output.checkpoint_every))
+            .transpose()?;
+
         Ok(Config {
             system: SystemConfig {
                 n_atoms,
@@ -666,7 +764,7 @@ impl RawConfig {
             potential,
             sampling,
             output,
-            dynamics: None,
+            dynamics,
         })
     }
 }

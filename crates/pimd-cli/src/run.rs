@@ -1,19 +1,28 @@
 //! The run driver: initial state, equilibration, production with recording, checkpoint/restart
-//! (MILESTONE_4; I-1, T-1, E-1 … E-4, E-7, D-2, D-3).
+//! (MILESTONE_4; I-1, T-1, E-1 … E-4, E-7, D-2, D-3), and the RPMD/TRPMD segment cycle of a
+//! `[dynamics]` run (MILESTONE_7; Y-1 … Y-5, T-4).
 
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::time::Duration;
 
-use pimd_core::units::{BOHR_IN_ANGSTROM, HARTREE_IN_EV, K_B_HARTREE_PER_KELVIN};
+use pimd_core::units::{
+    BOHR_IN_ANGSTROM, FS_IN_ATOMIC_TIME, HARTREE_IN_EV, K_B_HARTREE_PER_KELVIN,
+};
 use pimd_core::{Beads, Rng, RngState};
-use pimd_estimators::{Rdf, potential_mean, total_primitive, total_virial};
+use pimd_estimators::{
+    CentroidCorrelation, Rdf, centroid_velocity, green_kubo, hamiltonian, potential_mean,
+    total_primitive, total_virial,
+};
 use pimd_integrators::{RingPolymerIntegrator, RingPolymerSim, RingState, Thermostat};
 use pimd_potentials::{LennardJones, Potential};
 use pimd_socket::SocketPotential;
 
-use crate::config::{Config, GAS_PHASE_NEEDS_POSITIONS, PotentialConfig, invalid, put_u64};
+use crate::config::{
+    Config, DynamicsConfig, DynamicsMethod, GAS_PHASE_NEEDS_POSITIONS, PotentialConfig, invalid,
+    put_u64,
+};
 use crate::error::CliError;
 
 /// Results of a run (or of the run continued by `run_from_checkpoint`).
@@ -53,6 +62,10 @@ pub struct Correlations {
 /// `trajectory.xyz` (with `trajectory_every`), `checkpoint.bin` and `run.log` into `out_dir`
 /// (created if missing). A socket potential binds its address and waits for its clients first.
 ///
+/// With `[dynamics]`, production is the segment cycle of Y-1 (decorrelation steps with PILE-L,
+/// the Y-2 redraw, a segment with `Off` or `Trpmd`), and the run also writes `segments.csv` (one
+/// row per segment) and `correlations.csv` (at the end), MILESTONE_7 "Outputs".
+///
 /// The summary means are NaN when no production step was recorded (`n_steps < stride`).
 ///
 /// Errors: `CliError::Io` for file-system errors; errors of the core crates.
@@ -70,10 +83,16 @@ pub fn run(config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
         integrator(config)?,
         potential(config)?,
     )?;
+    let dynamics = config
+        .dynamics
+        .as_ref()
+        .map(|dy| DynState::new(dy, config.system.n_atoms))
+        .transpose()?;
     let mut d = Driver {
         sim,
         rng,
         rdf,
+        dynamics,
         step: 0,
         n_recorded: 0,
         sum_e_prim: 0.0,
@@ -131,6 +150,8 @@ struct Driver {
     sim: RingPolymerSim,
     rng: Rng,
     rdf: Option<Rdf>,
+    /// Correlation accumulators of a `[dynamics]` run.
+    dynamics: Option<DynState>,
     /// Production steps completed.
     step: usize,
     /// Recorded production steps.
@@ -140,6 +161,33 @@ struct Driver {
     /// Σ E_vir/N over recorded steps, Eh.
     sum_e_vir: f64,
 }
+
+/// The correlation accumulators of a `[dynamics]` run (Y-4) and the open segment's H_P.
+struct DynState {
+    /// C_vv of the centroid velocities v̄ (Y-3).
+    c_vv: CentroidCorrelation,
+    /// C_xx of the stored (unwrapped) centroids q̄ (Y-3); accumulated with a cell too.
+    c_xx: CentroidCorrelation,
+    /// H_P/N right after the current segment's redraw, Eh.
+    h_start: f64,
+}
+
+impl DynState {
+    fn new(dy: &DynamicsConfig, n_atoms: usize) -> Result<DynState, CliError> {
+        Ok(DynState {
+            c_vv: CentroidCorrelation::new(dy.n_lags, n_atoms)?,
+            c_xx: CentroidCorrelation::new(dy.n_lags, n_atoms)?,
+            h_start: f64::NAN,
+        })
+    }
+}
+
+/// The correlations.csv header (MILESTONE_7 "Outputs").
+const CORR_HEADER: &str =
+    "lag,t_fs,c_vv_au,c_vv_sem_au,d_au,d_angstrom2_per_ps,c_xx_bohr2,c_xx_sem_bohr2";
+
+/// The segments.csv header (MILESTONE_7 "Outputs").
+const SEG_HEADER: &str = "segment,step,h_start_eh,h_end_eh";
 
 /// The observables.csv header (MILESTONE_4 "Outputs").
 const OBS_HEADER: &str =
@@ -198,6 +246,21 @@ fn lattice(n: usize, l: [f64; 3]) -> Vec<[f64; 3]> {
         .collect()
 }
 
+/// The sampling thermostat PILE-L(τ_0) (T-1, T-2).
+fn sampling_thermostat(config: &Config) -> Thermostat {
+    Thermostat::PileL {
+        tau0: Some(config.sampling.tau0),
+    }
+}
+
+/// The segment thermostat of `[dynamics]` (Y-1): `Off` for RPMD, `Trpmd` for TRPMD (T-4).
+fn segment_thermostat(dy: &DynamicsConfig) -> Thermostat {
+    match dy.method {
+        DynamicsMethod::Rpmd => Thermostat::Off,
+        DynamicsMethod::Trpmd { lambda } => Thermostat::Trpmd { lambda },
+    }
+}
+
 /// BAOAB + PILE-L(τ_0) with the configured transform.
 fn integrator(config: &Config) -> Result<RingPolymerIntegrator, CliError> {
     let s = &config.sampling;
@@ -205,7 +268,7 @@ fn integrator(config: &Config) -> Result<RingPolymerIntegrator, CliError> {
         s.dt,
         s.beta,
         s.n_beads,
-        Thermostat::PileL { tau0: Some(s.tau0) },
+        sampling_thermostat(config),
         s.normal_modes,
     )?)
 }
@@ -281,11 +344,20 @@ fn write_log(config: &Config, out_dir: &Path, start: &str) -> Result<(), CliErro
 impl Driver {
     /// Production from `self.step` to `n_steps`: step s is recorded when s % stride == 0, after
     /// the step; a `trajectory.xyz` frame at every step s with s % trajectory_every == 0;
-    /// checkpoints every `checkpoint_every` steps and at the end.
+    /// checkpoints every `checkpoint_every` steps and at the end. With `[dynamics]`, each step
+    /// is placed in the Y-1 cycle by `self.step` (`dynamics_before`, `dynamics_after`).
     fn production(mut self, config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
         let s = &config.sampling;
         let mut obs = BufWriter::new(fs::File::create(out_dir.join("observables.csv"))?);
         writeln!(obs, "{OBS_HEADER}")?;
+        let mut segs = match &config.dynamics {
+            Some(_) => {
+                let mut f = BufWriter::new(fs::File::create(out_dir.join("segments.csv"))?);
+                writeln!(f, "{SEG_HEADER}")?;
+                Some(f)
+            }
+            None => None,
+        };
         // (trajectory_every, writer)
         let mut traj = match config.output.trajectory_every {
             Some(t) => Some((
@@ -295,6 +367,9 @@ impl Driver {
             None => None,
         };
         while self.step < s.n_steps {
+            if let Some(dy) = &config.dynamics {
+                self.dynamics_before(config, dy)?;
+            }
             self.sim.step(&mut self.rng)?;
             self.step += 1;
             if let Some((t, f)) = traj.as_mut()
@@ -305,8 +380,14 @@ impl Driver {
             if self.step.is_multiple_of(s.stride) {
                 self.record(config, &mut obs)?;
             }
+            if let (Some(dy), Some(f)) = (&config.dynamics, segs.as_mut()) {
+                self.dynamics_after(config, dy, f)?;
+            }
             if self.step.is_multiple_of(config.output.checkpoint_every) && self.step < s.n_steps {
                 obs.flush()?;
+                if let Some(f) = segs.as_mut() {
+                    f.flush()?;
+                }
                 if let Some((_, f)) = traj.as_mut() {
                     f.flush()?;
                 }
@@ -317,7 +398,18 @@ impl Driver {
         if let Some((_, f)) = traj.as_mut() {
             f.flush()?;
         }
+        if let Some(f) = segs.as_mut() {
+            f.flush()?;
+        }
         self.write_checkpoint(config, out_dir)?;
+        let correlations = match (&config.dynamics, &self.dynamics) {
+            (Some(dy), Some(ds)) => {
+                let c = correlations(config, dy, ds);
+                write_correlations(&c, out_dir)?;
+                Some(c)
+            }
+            _ => None,
+        };
         let rdf = self.rdf.as_ref().map(|r| (r.bin_centers(), r.g()));
         if let Some((r, g)) = &rdf {
             let mut f = BufWriter::new(fs::File::create(out_dir.join("rdf.csv"))?);
@@ -333,8 +425,77 @@ impl Driver {
             mean_e_prim: self.sum_e_prim / n,
             mean_e_vir: self.sum_e_vir / n,
             rdf,
-            correlations: None,
+            correlations,
         })
+    }
+
+    /// Before production step `self.step + 1` (Y-1): at a cycle start, the sampling thermostat;
+    /// after `decorrelation_steps` steps of the cycle, the Y-2 redraw, H_P/N at the segment
+    /// start, the segment thermostat and centroid sample s = 0 (Y-3).
+    fn dynamics_before(&mut self, config: &Config, dy: &DynamicsConfig) -> Result<(), CliError> {
+        let pos = self.step % (dy.decorrelation_steps + dy.segment_steps);
+        if pos == 0 {
+            self.sim.set_thermostat(sampling_thermostat(config))?;
+        }
+        if pos == dy.decorrelation_steps {
+            self.sim.resample_momenta(&mut self.rng);
+            let n = config.system.n_atoms as f64;
+            let h = hamiltonian(self.sim.state(), config.sampling.beta, self.sim.energies()) / n;
+            self.sim.set_thermostat(segment_thermostat(dy))?;
+            self.sample()?;
+            if let Some(ds) = self.dynamics.as_mut() {
+                ds.h_start = h;
+            }
+        }
+        Ok(())
+    }
+
+    /// After production step `self.step` (Y-1, Y-3): a centroid sample at every `corr_stride`-th
+    /// segment step; at the cycle end, H_P/N, the segment's C_seg (Y-4) and its segments.csv row
+    /// (segment counted from 0, the production step, H_P/N at start and end; Q30).
+    fn dynamics_after(
+        &mut self,
+        config: &Config,
+        dy: &DynamicsConfig,
+        segs: &mut impl Write,
+    ) -> Result<(), CliError> {
+        let cycle = dy.decorrelation_steps + dy.segment_steps;
+        // Steps of the current cycle completed, 1 … cycle.
+        let pos = (self.step - 1) % cycle + 1;
+        if pos <= dy.decorrelation_steps {
+            return Ok(());
+        }
+        if (pos - dy.decorrelation_steps).is_multiple_of(dy.corr_stride) {
+            self.sample()?;
+        }
+        if pos == cycle {
+            let n = config.system.n_atoms as f64;
+            let h_end =
+                hamiltonian(self.sim.state(), config.sampling.beta, self.sim.energies()) / n;
+            if let Some(ds) = self.dynamics.as_mut() {
+                ds.c_vv.end_segment()?;
+                ds.c_xx.end_segment()?;
+                writeln!(
+                    segs,
+                    "{},{},{},{}",
+                    self.step / cycle - 1,
+                    self.step,
+                    ds.h_start,
+                    h_end
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// One centroid sample (Y-3): v̄ into C_vv, the stored q̄ into C_xx.
+    fn sample(&mut self) -> Result<(), CliError> {
+        if let Some(ds) = self.dynamics.as_mut() {
+            let st = self.sim.state();
+            ds.c_vv.push(&centroid_velocity(&st.p, &st.masses))?;
+            ds.c_xx.push(&st.q.centroid())?;
+        }
+        Ok(())
     }
 
     /// One `trajectory.xyz` frame (MILESTONE_5 "Trajectory output"): `P·N`, then
@@ -403,7 +564,7 @@ impl Driver {
     /// leaves a truncated checkpoint).
     fn write_checkpoint(&self, config: &Config, out_dir: &Path) -> Result<(), CliError> {
         let tmp = out_dir.join("checkpoint.bin.tmp");
-        fs::write(&tmp, self.encode(config))?;
+        fs::write(&tmp, self.encode(config)?)?;
         fs::rename(&tmp, out_dir.join("checkpoint.bin"))?;
         Ok(())
     }
@@ -412,8 +573,12 @@ impl Driver {
     /// P, N, production step, recorded steps (u64), Σ E_prim/N, Σ E_vir/N (f64), RNG state length
     /// (u64) and bytes, q, p, forces (P·N·3 f64 each), energies (P f64), RDF flag (u64 0/1) and,
     /// with an RDF, n_bins (u64), r_max (f64, bohr), n_samples (u64) and the counts (n_bins f64).
-    /// Depends only on the state, the accumulators, the config hash and the RDF settings.
-    fn encode(&self, config: &Config) -> Vec<u8> {
+    /// With `[dynamics]` (MILESTONE_7 "Checkpoint block") this version-2 layout is followed by the
+    /// C_vv and then the C_xx `CentroidCorrelation::to_bytes` buffers, each prefixed by its length
+    /// (u64). Depends only on the state, the accumulators, the config hash and the RDF settings.
+    ///
+    /// Errors: `CliError::Estimator` if a segment is open (checkpoints fall on cycle ends).
+    fn encode(&self, config: &Config) -> Result<Vec<u8>, CliError> {
         let st = self.sim.state();
         let (p, n) = (st.q.n_beads(), st.q.n_atoms());
         let rng = self.rng.snapshot().to_bytes();
@@ -451,7 +616,14 @@ impl Driver {
             }
             _ => u(&mut w, 0),
         }
-        w
+        if let Some(ds) = &self.dynamics {
+            for c in [&ds.c_vv, &ds.c_xx] {
+                let b = c.to_bytes()?;
+                u(&mut w, b.len() as u64);
+                w.extend_from_slice(&b);
+            }
+        }
+        Ok(w)
     }
 
     /// Inverse of `encode` for `config`. The simulation is rebuilt from the saved positions,
@@ -524,6 +696,30 @@ impl Driver {
             (0 | 1, _) => return Err(bad("RDF presence differs from the config's [output]")),
             _ => return Err(bad("corrupt RDF flag")),
         };
+        let dynamics = match &config.dynamics {
+            None => None,
+            Some(dy) => {
+                // Samples are not saved: the checkpoint must fall on a cycle end.
+                if !step.is_multiple_of(dy.decorrelation_steps + dy.segment_steps) {
+                    return Err(bad("checkpoint is not at the end of a dynamics cycle"));
+                }
+                let mut corr = || -> Result<CentroidCorrelation, CliError> {
+                    let len = r.usize()?;
+                    let c = CentroidCorrelation::from_bytes(r.take(len)?)
+                        .map_err(|e| CliError::Checkpoint(format!("correlation block: {e}")))?;
+                    if c.mean().len() != dy.n_lags {
+                        return Err(bad("correlation block: n_lags differs from the config"));
+                    }
+                    Ok(c)
+                };
+                let (c_vv, c_xx) = (corr()?, corr()?);
+                Some(DynState {
+                    c_vv,
+                    c_xx,
+                    h_start: f64::NAN,
+                })
+            }
+        };
         if r.pos != bytes.len() {
             return Err(bad("trailing bytes after the checkpoint data"));
         }
@@ -544,12 +740,60 @@ impl Driver {
             sim,
             rng: Rng::restore(&rng),
             rdf,
+            dynamics,
             step,
             n_recorded,
             sum_e_prim,
             sum_e_vir,
         })
     }
+}
+
+/// The run's `Correlations` from the accumulators (Y-4, Y-5); C_xx is not reported with a cell.
+fn correlations(config: &Config, dy: &DynamicsConfig, ds: &DynState) -> Correlations {
+    let dt_lag = dy.corr_stride as f64 * config.sampling.dt;
+    let c_vv = ds.c_vv.mean();
+    let diffusion = green_kubo(&c_vv, dt_lag);
+    Correlations {
+        dt_lag,
+        n_segments: ds.c_vv.n_segments(),
+        c_vv_sem: ds.c_vv.sem(),
+        c_vv,
+        c_xx: match config.system.cell {
+            None => Some((ds.c_xx.mean(), ds.c_xx.sem())),
+            Some(_) => None,
+        },
+        diffusion,
+    }
+}
+
+/// `correlations.csv` (MILESTONE_7 "Outputs"): one row per lag; t in fs, D also in Å²/ps, C_xx
+/// columns `NaN` with a cell; conversions through `pimd_core::units` only (U-3).
+fn write_correlations(c: &Correlations, out_dir: &Path) -> Result<(), CliError> {
+    let mut f = BufWriter::new(fs::File::create(out_dir.join("correlations.csv"))?);
+    writeln!(f, "{CORR_HEADER}")?;
+    // bohr²/(ħ/Eh) → Å²/ps: (Å per bohr)² × (ħ/Eh per fs) × (fs per ps).
+    let d_conv = BOHR_IN_ANGSTROM * BOHR_IN_ANGSTROM * FS_IN_ATOMIC_TIME * 1000.0;
+    for k in 0..c.c_vv.len() {
+        let (xx, xx_sem) = match &c.c_xx {
+            Some((x, s)) => (x[k], s[k]),
+            None => (f64::NAN, f64::NAN),
+        };
+        writeln!(
+            f,
+            "{},{},{},{},{},{},{},{}",
+            k,
+            k as f64 * c.dt_lag / FS_IN_ATOMIC_TIME,
+            c.c_vv[k],
+            c.c_vv_sem[k],
+            c.diffusion[k],
+            c.diffusion[k] * d_conv,
+            xx,
+            xx_sem
+        )?;
+    }
+    f.flush()?;
+    Ok(())
 }
 
 /// Bounds-checked little-endian reader over a checkpoint; running past the end is
