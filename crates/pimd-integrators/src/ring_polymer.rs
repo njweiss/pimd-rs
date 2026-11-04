@@ -17,7 +17,7 @@ pub struct RingState {
     pub masses: Vec<f64>,
 }
 
-/// Thermostat applied in the O step (T-1, T-2).
+/// Thermostat applied in the O step (T-1, T-2, T-4).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Thermostat {
     /// No thermostat: the O step is the identity (T-3).
@@ -114,8 +114,9 @@ impl RingPolymerIntegrator {
         state.p = self.modes.to_beads(&pt);
     }
 
-    /// One O step of length dt (T-1): PILE-L on the normal-mode momenta, or the identity for
-    /// `Thermostat::Off`. Draws one normal per (k, i, d), k outermost, then atom i, then d.
+    /// One O step of length dt (T-1): PILE-L or TRPMD (T-4) on the normal-mode momenta, or the
+    /// identity for `Thermostat::Off`. Draws one normal per (k, i, d), k outermost, then atom i,
+    /// then d.
     /// `Thermostat::Off` draws nothing (T-3).
     ///
     /// `state.masses` must be positive and finite (S-2); this is not checked here
@@ -356,7 +357,7 @@ impl RingPolymerSim {
     /// Errors: `IntegratorError::Potential` if the evaluation fails, or
     /// `IntegratorError::ShapeMismatch` if its forces are not `[P, N, 3]` or its energies not
     /// length P (P-1). The simulation is then left unchanged, but the caller's `rng` has already
-    /// advanced: P·N·3 normal draws under PILE-L, none under `Off` (D-4).
+    /// advanced: P·N·3 normal draws under PILE-L and TRPMD, none under `Off` (D-4).
     pub fn step(&mut self, rng: &mut Rng) -> Result<(), IntegratorError> {
         let ig = &self.integrator;
         let half = 0.5 * ig.dt;
