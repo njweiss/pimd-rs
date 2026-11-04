@@ -5,7 +5,8 @@
 
 Configs go to studies/m6-water-mace/configs/<set>/<run>.toml; paths inside are relative to the
 repository root, where run.sh runs them. Seeds as in the plan: 1000 + P (H2O), +100 (D2O), +200
-(HDO), +300 (xTB); the second P = 32 seed is 2032; the dt check (xTB P = 32) 1432 (dt/2), 1532 (dt/4).
+(HDO), +300 (xTB); the second P = 32 seed is 2032; the dt check: xTB P = 32 1432 (dt/2),
+1532 (dt/4); MACE P = 32 3032 (dt/2).
 """
 
 import argparse
@@ -85,6 +86,8 @@ def main():
         items = [(f"h2o_xtb_p32_dt{dt}", toml("h2o", "xtb", 32, seed, int(10_000 / dt), int(100_000 / dt),
                                                 dt_fs=dt, traj_every=int(5 / dt)))
                  for dt, seed in ((0.25, 1432), (0.125, 1532))]
+        # Log 2026-11-03: MACE P = 32 at dt/2 (plan "dt bias" rule), CUDA float64.
+        items.append(("h2o_mace_p32_dt0.25", toml("h2o", "mace", 32, 3032, 40_000, 400_000, "cuda", dt_fs=0.25, traj_every=20)))
     else:
         items = runs(args.n_steps, args.n_steps_p32 or args.n_steps, 20_000)
     for name, text in items:
