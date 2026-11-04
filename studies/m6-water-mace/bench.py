@@ -144,7 +144,8 @@ def figure(rows):
         ax.set_xlabel("P")
         ax.set_title(name)
     axes[0].set_ylabel("ms per MD step")
-    axes[1].legend(fontsize=7)
+    for ax in axes:
+        ax.legend(fontsize=7)
     fig.tight_layout()
     fig.savefig(HERE / "results/fig_throughput.png", dpi=150)
 
