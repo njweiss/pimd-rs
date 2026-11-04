@@ -315,3 +315,36 @@ resolved. Consequence for Q2: MACE at dt → 0, E − harmonic = 0.023211 − 0.
 (−2.1 % of the harmonic quantum−classical difference 0.017887), against −2.7e-4 at 0.5 fs; xTB
 −4.1(2)e-4 (−2.5 %). Both models: the anharmonic correction to the energy at 300 K is negative and
 about 2 % of the quantum shift, resolved at > 9σ.
+
+### 2026-11-04 05:18 – 11:00 Throughput survey (`bench.py`; `out/bench.log`; `results/throughput.csv`, `results/fig_throughput.png`)
+
+All 53 cases completed (5 h 43 min). Machine: no other study process; CPU load average 0.31 at
+start (1.99 at end, during the xTB cases, from the engine and its four clients); `nvidia-smi`
+showed 25 % GPU utilisation and 1 785 MiB used with no compute process visible from WSL at start,
+presumably Windows host activity, so CUDA numbers may carry a small, unmeasured background.
+Figure redrawn from the CSV after the run with a legend on each panel (the xTB curve was
+unlabelled); `bench.py` `figure` changed accordingly, data untouched. ms per MD step (best of
+three, start-up cancelled):
+
+| system | P | f64 CPU 1 thr | f64 CPU 4 thr | f64 CUDA | f32 CPU 1 thr | f32 CPU 4 thr | f32 CUDA |
+|---|---|---|---|---|---|---|---|
+| water | 1 | 10.7 | 7.9 | 26.8 | 8.0 | 6.8 | 25.6 |
+| water | 8 | 53.5 | 26.0 | 28.1 | 30.7 | 18.3 | 27.8 |
+| water | 16 | 106.2 | 49.2 | 32.4 | 57.4 | 29.6 | 28.8 |
+| water | 32 | 245.5 | 103.6 | 52.0 | 113.6 | 55.6 | 30.2 |
+| ethanol | 1 | 23.7 | 13.7 | 28.8 | 15.3 | 10.4 | 27.5 |
+| ethanol | 8 | 188.9 | 85.8 | 43.6 | 94.5 | 43.9 | 27.7 |
+| ethanol | 16 | 404.8 | 200.2 | 74.0 | 199.4 | 85.1 | 29.2 |
+| ethanol | 32 | 871.4 | 453.5 | 138.1 | 419.9 | 203.7 | 29.9 |
+
+CUDA f64 with `deterministic = false` at P = 32: water 50.3, ethanol 134.9 (−3 %, −2 % against
+deterministic). GFN2-xTB socket, four clients, water: 0.58 (P = 1), 2.45 (P = 16), 4.62 (P = 32).
+
+Observations: (1) CPU cost is linear in P (and in atoms: ethanol/water ≈ 3.5 at P = 32, f64 1 thr);
+four threads give 1.4–2.4× over one. (2) CUDA has a floor of ≈ 26–30 ms/step (per-step launch and
+transfer overhead, not compute): f32 CUDA stays on it up to P = 32 for both molecules, f64 CUDA
+leaves it above P ≈ 16 (water) and P ≈ 8 (ethanol). CUDA beats four CPU threads from P ≈ 16
+(water) and P ≈ 8 (ethanol); at P = 1 CPU is 2–4× faster. (3) f32 roughly halves CPU cost and, at
+ethanol P = 32, is 4.6× faster than f64 on CUDA. (4) Determinism costs ≤ 3 %. (5) For a 3-atom
+molecule the xTB socket path is 6–12× cheaper than the fastest MACE configuration at each P; the pilot's
+7.1 ms/step for xTB P = 32 included trajectory and observable output, absent here.
