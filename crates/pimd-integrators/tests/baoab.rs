@@ -60,6 +60,8 @@ fn ref_step(
     let p3 = match th {
         Thermostat::Off => p2,
         Thermostat::PileL { tau0 } => ref_o_step(&p2, masses, beta, dt, tau0, rng),
+        // Added in M7 Phase A (QUESTIONS Q28): the new variant (T-4) is not used by this M2 test.
+        Thermostat::Trpmd { .. } => unreachable!("T-4 is tested in trpmd.rs"),
     };
     let (q4, p4) = ref_free_propagate(&q2, &p3, masses, beta, 0.5 * dt);
     let (e, f4) = ref_ef(kind, &q4, masses);
