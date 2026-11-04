@@ -1,7 +1,7 @@
 # Milestone 7: Ring-polymer dynamics (RPMD, TRPMD; PA-CMD in M7b)
 
-Status: **draft (2026-11-04), not approved.** Decisions below were taken by the owner on
-2026-11-04; the SPEC additions and the public API are proposals for approval.
+Status: **approved (2026-11-04)**: M7a as below (SPEC T-4 and §8a Y-1 … Y-5 added); M7b
+outline only, briefed after M7a merges.
 
 | Phase | Flow | Output |
 | --- | --- | --- |
@@ -60,7 +60,7 @@ M1–M6 merged; R1 on hold. Relevant pieces:
 8. PA-CMD (M7b): the adiabatic frequency Ω is a required config input with no built-in formula
    (as i-PI); the usual Ω = P^{P/(P−1)}/β could not be confirmed against a primary source.
 
-## SPEC additions (proposed)
+## SPEC additions (added 2026-11-04)
 
 Section 7, after T-3:
 
@@ -319,7 +319,7 @@ para-H₂ (optional experiment after M7); periodic MACE (M8).
 
 ## Acceptance
 
-- [ ] Owner approves this brief, the SPEC additions (T-4, Y-1 … Y-5) and the public API
+- [x] Owner approves this brief, the SPEC additions (T-4, Y-1 … Y-5) and the public API
 - [x] TRPMD λ = 1/2 checked against Rossi et al. (2014) full text (Eqs. 28, 30); citation fixed
 - [ ] M7a: all tests pass; `check.sh` exits 0, including thread-count runs
 - [ ] M7a: long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); agreement levels and the DVR
