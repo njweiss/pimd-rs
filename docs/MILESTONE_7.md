@@ -328,11 +328,28 @@ para-H₂ (optional experiment after M7); periodic MACE (M8).
 
 - [x] Owner approves this brief, the SPEC additions (T-4, Y-1 … Y-5) and the public API
 - [x] TRPMD λ = 1/2 checked against Rossi et al. (2014) full text (Eqs. 28, 30); citation fixed
-- [ ] M7a: all tests pass; `check.sh` exits 0, including thread-count runs
+- [x] M7a: all tests pass; `check.sh` exits 0, including thread-count runs
 - [ ] M7a: long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); agreement levels and the DVR
       comparison added to `validation/RESULTS.md`
-- [ ] M7a: review done; no blocking findings; `QUESTIONS.md` has no open entries
+- [x] M7a: review done; no blocking findings; `QUESTIONS.md` has no open entries
 - [ ] M7b briefed and approved (after M7a merges)
+
+## After review (M7a, 2026-11-04)
+
+Phase C at 7a64ac1: no blocking or should-fix findings. Accepted behaviour beyond the brief:
+
+- **Allocation (Q17 policy).** A segment sample buffer (L·N·3 f64) that cannot be allocated is
+  `InvalidValue("dynamics.segment_steps")` at parse time; a cycle length
+  `decorrelation_steps + segment_steps` that overflows is `InvalidValue("dynamics.decorrelation_steps")`.
+- **Restart refusals.** `CliError::Checkpoint` for a `[dynamics]` checkpoint not at a cycle end,
+  and for a correlation block that fails `from_bytes` or whose n_lags or n_atoms differs from the
+  config (only reachable with a corrupt or hand-made file; the hash covers these fields).
+- **SI prefixes (U-3).** A pure SI-prefix factor (×1000 for fs → ps, as for Eh → meV) may be
+  written inline next to the `units` constants it scales; physical conversion factors stay in
+  `units`.
+
+Nits fixed after review: TRPMD added to the O-step and draw-count docs (D-4), the n_atoms check
+above, and the zero clamp of a rounding-negative variance documented on `sem`.
 
 ## M7b outline (PA-CMD; to be briefed after M7a)
 
