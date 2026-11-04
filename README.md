@@ -5,8 +5,9 @@ ensemble of distinguishable nuclei with ring polymers: BAOAB integration with th
 ring-polymer propagator, PILE-L thermostat, primitive and virial energy estimators, and the radial
 distribution function. Potentials sit behind a model-agnostic `Potential` trait so that machine-learned
 interatomic potentials can be added without changes to the engine; the current potentials are
-Lennard-Jones (periodic, neighbor lists), harmonic and a quartic double well. Atomic units
-internally, f64 throughout, and results that are bitwise identical across thread counts and
+Lennard-Jones (periodic, neighbor lists), harmonic, a quartic double well, external codes over the
+i-PI socket protocol (e.g. GFN2-xTB), and MACE models in process through libtorch (feature
+`torch`). Atomic units internally, f64 throughout, and results that are bitwise identical across thread counts and
 across checkpoint/restart.
 
 ## Status
@@ -17,9 +18,11 @@ across checkpoint/restart.
 | M2 Ring-polymer sampling | BAOAB, PILE-L, estimators, harmonic and double-well validation | merged |
 | M3 Classical core | Lennard-Jones, velocity Verlet, RDF, pressure, LAMMPS comparisons | merged |
 | M4 Quantum liquid | `pimd-rs` binary, config, checkpoint/restart, liquid neon vs i-PI | merged |
+| M5 Socket backend | i-PI socket client, water with GFN2-xTB | merged |
+| M6 Torch backend | in-process MACE (TorchScript, CPU/CUDA), ML-PIMD study of water with MACE-OFF23 | merged |
 
 Release gate R1 (after M4): on hold; not yet published. Not implemented: electrostatics,
-constraints, dynamics (RPMD/CMD/TRPMD), ML potentials, non-orthorhombic cells, Python bindings.
+constraints, dynamics (RPMD/CMD/TRPMD), non-orthorhombic cells, Python bindings.
 The rules and conventions are in [`docs/SPEC.md`](docs/SPEC.md); the process is in
 [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
 
