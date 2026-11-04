@@ -44,10 +44,13 @@ M1–M6 merged; R1 on hold. Relevant pieces:
    segment used as a time origin. Redrawing makes the average canonical (a single NVE ring-polymer
    trajectory samples one H_P shell and is not ergodic for the harmonic test); how far apart
    segments are only affects the error bars, and segments are the blocks for σ.
-3. Pluggable thermostat as a new enum variant `Thermostat::Trpmd { lambda }`, default λ = 1/2
-   (the TRPMD setting given by the i-PI how-to after Rossi, Ceriotti, Manolopoulos, J. Chem.
-   Phys. 140, 234116 (2014); to be checked against the paper's full text before approval). No
-   trait.
+3. Pluggable thermostat as a new enum variant `Thermostat::Trpmd { lambda }`, default λ = 1/2.
+   Source: Rossi, Ceriotti, Manolopoulos, J. Chem. Phys. 140, 234116 (2014) (arXiv:1406.1074),
+   checked in the full text on 2026-11-04: PILE critical damping γ̃_c = 2ω̃ (Eq. 28) scaled as
+   γ = λγ_c (Eq. 30), λ = 1 critical damping, λ = 0 standard RPMD; "λ = 1/2 is close to optimum
+   for all of the problems we have studied", used throughout their Sec. III. The paper also
+   requires the centroid to stay unthermostatted (a centroid thermostat "would invalidate" the
+   TRPMD correlation-function results), as T-4 does. No trait.
 4. Correlations computed in Rust (`pimd-estimators`) and written by the CLI.
 5. Only centroid velocity and centroid position autocorrelations. No dipoles or spectra.
 6. Double-well rung uses the existing separable `DoubleWell` (P-2, b > 0 unchanged); its x
@@ -317,7 +320,7 @@ para-H₂ (optional experiment after M7); periodic MACE (M8).
 ## Acceptance
 
 - [ ] Owner approves this brief, the SPEC additions (T-4, Y-1 … Y-5) and the public API
-- [ ] TRPMD λ = 1/2 checked against Rossi et al. (2014) full text; citation in the brief fixed
+- [x] TRPMD λ = 1/2 checked against Rossi et al. (2014) full text (Eqs. 28, 30); citation fixed
 - [ ] M7a: all tests pass; `check.sh` exits 0, including thread-count runs
 - [ ] M7a: long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); agreement levels and the DVR
       comparison added to `validation/RESULTS.md`
