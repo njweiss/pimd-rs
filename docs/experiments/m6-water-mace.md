@@ -290,3 +290,28 @@ H₂O MACE P = 32 at dt = 0.25 fs, seed 3032, CUDA float64, 40 000 + 400 000 ste
 trajectory every 20 steps (`configs/dtcheck/h2o_mace_p32_dt0.25.toml`). Alone on the machine;
 estimated ≈ 7 h (55 ms/step, pilot). Compared with the two 0.5 fs seeds through E − harmonic and
 an a + b·dt² estimate from two time steps (no χ² possible).
+
+### 2026-11-03 22:47 – 2026-11-04 05:16 MACE time-step run, result (`out/dtcheck_mace.log`; `results/summary.json` "dt check, mace P = 32")
+
+Completed: 400 000 production steps, 23 351 s wall (53 ms/step), machine otherwise idle (load 0.03
+at start). Deviation from the plan entry: the fit uses both 0.5 fs seeds as separate points, so it
+has three points at two time steps and one degree of freedom (χ² reported); `analyse.py` `DTCHECK`
+generalised to name → (model, dt, trajectory spacing). H₂O MACE P = 32, E − V_min in Eh:
+
+| dt (fs) | ⟨E_vir⟩ | ⟨E_prim⟩ | E_vir − E_prim | ⟨r_OH⟩ (bohr) | ⟨θ⟩ (°) |
+|---|---|---|---|---|---|
+| 0.5 (seed 1032) | 0.023315(27) | 0.023000(53) | +3.15(63)e-4 | 1.84391(7) | 104.738(19) |
+| 0.5 (seed 2032) | 0.023289(27) | 0.022939(48) | +3.50(50)e-4 | 1.84375(8) | 104.761(18) |
+| 0.25 (seed 3032) | 0.023234(28) | 0.023169(54) | +0.65(50)e-4 | 1.84375(9) | 104.750(18) |
+| fit, dt → 0 | 0.023211(38) | 0.023236(72) | −0.26(68)e-4 | 1.84372(12) | 104.749(25) |
+| fit slope b (per fs²) | +3.6(1.8)e-4 | −10.8(3.4)e-4 | +1.45(34)e-3 | +0.5(6)e-3 | +0.00(12) |
+| χ² (1 dof) | 0.47 | 0.75 | 0.19 | 2.37 | 0.79 |
+
+**Finding: MACE shows the same finite-time-step bias as xTB.** E_vir − E_prim falls from
++3.3e-4 (mean of the seeds) to +0.65(50)e-4 at 0.25 fs (dt² scaling predicts +0.8e-4) and
+extrapolates to −0.26(68)e-4, zero within 0.4σ; the slope matches xTB's (+1.45(34)e-3 against
++1.36(23)e-3 per fs²). Bias at 0.5 fs: E_vir +0.9(5)e-4 Eh, E_prim −2.7(9)e-4 Eh; r_OH and θ none
+resolved. Consequence for Q2: MACE at dt → 0, E − harmonic = 0.023211 − 0.023587 = −3.8(4)e-4 Eh
+(−2.1 % of the harmonic quantum−classical difference 0.017887), against −2.7e-4 at 0.5 fs; xTB
+−4.1(2)e-4 (−2.5 %). Both models: the anharmonic correction to the energy at 300 K is negative and
+about 2 % of the quantum shift, resolved at > 9σ.

@@ -39,7 +39,9 @@ RUNS = {  # name: (species, model, P)
     **{f"{s}_mace_p{p}": (s, "mace", p) for s in ("d2o", "hdo") for p in (1, 32)},
 }
 # Time-step check (log 2026-11-03): H2O xTB P = 32 in out/dtcheck/, name: (dt fs, trajectory_every).
-DTCHECK = {"h2o_xtb_p32_dt0.25": (0.25, 20), "h2o_xtb_p32_dt0.125": (0.125, 40)}
+# MACE P = 32 at dt/2 (log 2026-11-03, plan "dt bias" rule) likewise; name: (model, dt fs, trajectory_every).
+DTCHECK = {"h2o_xtb_p32_dt0.25": ("xtb", 0.25, 20), "h2o_xtb_p32_dt0.125": ("xtb", 0.125, 40),
+           "h2o_mace_p32_dt0.25": ("mace", 0.25, 20)}
 
 
 def block_sigma(x, block):
@@ -122,14 +124,18 @@ def main():
             r["e_vir_minus_harmonic"] = r["e_vir"][0] - r["harmonic_e"]
             runs[name] = r
 
-    dtruns = {0.5: runs.get("h2o_xtb_p32")}
-    for name, (dt, te) in DTCHECK.items():
-        dtruns[dt] = analyse_run(name, "h2o", "xtb", 32, harm["xtb"]["v_min_eh"], HERE / "out" / "dtcheck", dt, te)
-    dtruns = {dt: r for dt, r in dtruns.items() if r}
+    dtruns = {"xtb": [(0.5, runs.get("h2o_xtb_p32"))],
+              "mace": [(0.5, runs.get("h2o_mace_p32")), (0.5, runs.get("h2o_mace_p32_seed2"))]}
+    for name, (model, dt, te) in DTCHECK.items():
+        dtruns[model].append((dt, analyse_run(name, "h2o", model, 32, harm[model]["v_min_eh"], HERE / "out" / "dtcheck", dt, te)))
 
     checks, comp = {}, {}
-    if len(dtruns) == 3:
-        comp["dt check, xtb P = 32"] = dt_check(dtruns)
+    for model, pts in dtruns.items():
+        pts = [(dt, r) for dt, r in pts if r]
+        if len({dt for dt, _ in pts}) >= 2 and len(pts) >= 3:
+            c = dt_check(pts)
+            c["e_vir_dt0_minus_harmonic"] = c["e_vir"]["dt0"][0] - harm[model]["isotopes"]["h2o"]["e_minus_vmin_eh"]["32"]
+            comp[f"dt check, {model} P = 32"] = c
     for name, r in runs.items():
         # One trajectory: σ from the blocks of the difference series (the estimators are correlated).
         m, sd = r["e_vir_minus_e_prim"]
@@ -174,19 +180,21 @@ def main():
     print(json.dumps(comp, indent=1))
 
 
-def dt_check(dtruns):
-    """Per estimator: values at each dt and a weighted fit a + b·dt² (dt in fs), with a ± σ_a."""
-    out = {"dt_fs": sorted(dtruns)}
+def dt_check(pts):
+    """Per estimator: values at each (dt, run) and a weighted fit a + b·dt² (dt in fs), with a ± σ_a
+    and χ² for len(pts) − 2 degrees of freedom."""
+    pts = sorted(pts, key=lambda t: t[0])
+    dts = [dt for dt, _ in pts]
+    out = {"dt_fs": dts}
     for k in ("e_vir", "e_prim", "e_vir_minus_e_prim", "r_oh", "theta"):
-        dts = sorted(dtruns)
-        y = np.array([dtruns[dt][k][0] for dt in dts])
-        s = np.array([dtruns[dt][k][1] for dt in dts])
+        y = np.array([r[k][0] for _, r in pts])
+        s = np.array([r[k][1] for _, r in pts])
         a = np.vstack([np.ones(len(dts)), np.array(dts) ** 2]).T / s[:, None]
         coef, *_ = np.linalg.lstsq(a, y / s, rcond=None)
         cov = np.linalg.inv(a.T @ a)
         chi2 = float(np.sum(((a @ coef) - y / s) ** 2))
         out[k] = {"values": [[float(v), float(e)] for v, e in zip(y, s)], "dt0": [float(coef[0]), float(math.sqrt(cov[0, 0]))],
-                  "slope_per_fs2": [float(coef[1]), float(math.sqrt(cov[1, 1]))], "chi2_1dof": chi2}
+                  "slope_per_fs2": [float(coef[1]), float(math.sqrt(cov[1, 1]))], "chi2": chi2}
     return out
 
 
