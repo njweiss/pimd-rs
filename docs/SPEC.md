@@ -72,6 +72,7 @@ Non-goals: training MLIPs, a general-purpose MD package, electrostatics (Ewald/P
   Draw order: k = 0..P−1 (in `NormalModes` column order) outermost, then atom i, then dimension d; one normal per (k, i, d) per O step.
 - **T-2** γ_0 = 1/τ_0 for configured τ_0 (`None` ⇒ γ_0 = 0). For every mode with ω_k > 0, γ_k = 2 ω_k.
 - **T-3** `Thermostat::Off` applies the identity and draws no random numbers; with it, the dynamics conserve H_P with error O(dt²).
+- **T-4** `Thermostat::Trpmd { lambda }`, λ > 0 and finite (thermostatted RPMD, Rossi, Ceriotti, Manolopoulos, J. Chem. Phys. 140, 234116 (2014), Eqs. 28 and 30): the O step of T-1 with γ_0 = 0 and γ_k = 2λω_k for every mode with ω_k > 0. Draw order and count as T-1 (P·N·3 normals per O step, including the k = 0 draws, whose noise coefficient is zero). `Trpmd { lambda: 1.0 }` is `PileL { tau0: None }` bitwise. Same convention as i-PI's `pile_lambda`.
 
 ## 8. Estimators
 
@@ -86,6 +87,16 @@ All return totals over atoms and Cartesian components, in Eh. The energy estimat
 - **E-7** RDF: `n_bins` equal bins on [0, r_max) (pairs with r ≥ r_max are not counted; a distance below r_max that rounds past the last bin goes into the last bin), r_max ≤ L_min/2, cell required; a configuration with P = 0 is `ShapeMismatch` (Q12). With C_b the number of pair distances (i < j) over all beads falling in bin b and V_shell(b) = (4π/3)(r_{b+1}³ − r_b³): g_b = 2·C_b·V / (P·N·(N−1)·V_shell(b)). An ideal gas gives g = 1 in expectation. Requires N ≥ 2 (else `InvalidValue`); before any sample g is all zeros (Q10).
 - **E-8** Classical pressure (P = 1): p = (2K + tr W)/(3V), with K = Σ_i |p_i|²/(2 m_i), virial W = Σ_{i<j} r_ij ⊗ f_ij, r_ij = r_i − r_j, f_ij the force on i from j.
 - **E-9** Exact finite-P reference (derived from Z_P = (P/β)^P / Π_k Ω_k per Cartesian component, Ω_k² = ω_k² + ω², and verified numerically against −∂ ln Z_P/∂β and Monte Carlo): for N atoms in `Harmonic` with frequency ω, ⟨E_prim⟩ = ⟨E_vir⟩ = (3N/β) Σ_{k=0}^{P−1} ω²/(ω_k² + ω²), independent of mass. P = 1 gives 3N/β; P → ∞ gives 3N·(ω/2)·coth(βω/2). Statistical tests must use this finite-P value, not the P → ∞ limit.
+
+## 8a. Dynamics
+
+Ring-polymer dynamics for Kubo-transformed time-correlation functions of the centroid (RPMD, TRPMD).
+
+- **Y-1** Segment cycle. After `n_equil` thermostatted steps, production is a sequence of cycles, each: (a) `decorrelation_steps` steps with the sampling thermostat (PILE-L, T-1/T-2); (b) the momentum redraw Y-2; (c) `segment_steps` steps with the dynamics thermostat (`Off` for RPMD, `Trpmd` for TRPMD). Switching thermostat never evaluates the potential: the forces at the end of one phase are reused by the next (I-3). One `pimd_core::Rng` drives every draw in the order the draws occur (D-2).
+- **Y-2** Momentum redraw: every bead momentum p_{j,i,d} ← sqrt(m_i·P/β)·ξ, ξ ~ N(0, 1), drawn atom i outermost, then bead j, then dimension d (the order of the initial draw); P·N·3 draws. Positions and forces are unchanged.
+- **Y-3** Centroid samples: v̄_i = (1/P) Σ_j p_{j,i}/m_i (bohr per ħ/Eh) and q̄_i = (1/P) Σ_j q_{j,i} (bohr, as stored, not wrapped). Within a segment, sample s = 0, 1, …, L − 1 is taken at segment step s·`corr_stride` (s = 0 right after the redraw, before the first dynamics step), so L = `segment_steps`/`corr_stride` + 1.
+- **Y-4** Correlation estimator. For one segment with samples x(0) … x(L − 1) of N atoms and lag τ = 0 … `n_lags` − 1 (n_lags ≤ L): C_seg(τ) = (1/(N·(L − τ))) Σ_{s=0}^{L−1−τ} Σ_i x_i(s)·x_i(s + τ), the dot product over x, y, z, summed s outermost, then i, then d. The estimate is the mean of C_seg over segments (equal weights, summed in segment order); its σ is the sample standard deviation of C_seg (n − 1 denominator) over √n_segments. C_vv uses v̄, C_xx uses q̄. Lag τ is the time τ·`corr_stride`·dt. At τ = 0: C_vv(0) = 3/(β m) for equal masses; C_xx(0) = ⟨|q̄|²⟩ of the finite-P ensemble.
+- **Y-5** Green–Kubo: D(τ_n) = (1/3) ∫_0^{τ_n} C_vv dt by the trapezoid rule on the lag grid, D(0) = 0, in bohr²/(ħ/Eh). Meaningful for a single species only.
 
 ## 9. Potentials
 
@@ -122,7 +133,7 @@ All return totals over atoms and Cartesian components, in Eh. The energy estimat
 | **R1** | **Release gate: owner decides whether to publish** | |
 | M5 | i-PI-protocol socket backend; bridge validation (LJ served from Python); GFN2-xTB; engine vs i-PI on xTB | A/B/C |
 | M6 | In-process torch backend (spike first), MACE-OFF23 adapter, gas-phase ML-RPMD study | engine: A/B/C; study: experiment log |
-| M7 | Dynamics: RPMD, CMD, TRPMD with a pluggable thermostat; time-correlation validation | A/B/C |
+| M7 | Dynamics: M7a RPMD and TRPMD (T-4, Y-1 … Y-5), centroid time-correlation functions; M7b PA-CMD | A/B/C (M7b briefed after M7a) |
 | M8 | Solvated ligand: PBC with larger batches, ML/MM decision | decide at start |
 
 Notes for later milestones:

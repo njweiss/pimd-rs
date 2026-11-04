@@ -4,7 +4,7 @@ Rust path-integral MD engine with a model-agnostic MLIP hook. This file is the s
 
 ## Where things are
 
-- `docs/SPEC.md`: authoritative rules with IDs (U-, D-, S-, C-, RP-, I-, T-, E-, P-, K-, N-). Code and tests cite these IDs.
+- `docs/SPEC.md`: authoritative rules with IDs (U-, D-, S-, C-, RP-, I-, T-, E-, Y-, P-, K-, N-). Code and tests cite these IDs.
 - `docs/WORKFLOW.md`: the three-phase process (tests, implement, review), tolerance policy, mutant list, signature-revision path.
 - `docs/MILESTONE_N.md`: the brief for each milestone: in-scope IDs, exact signatures, required tests.
 - `docs/QUESTIONS.md`: anything ambiguous or wrong. Add an entry; do not work around it.
@@ -56,7 +56,8 @@ pixi run test-validation        # same as CHECK_LONG=1 ./scripts/check.sh
 | M4 Quantum liquid, then release gate R1 | merged; R1: hold (2026-10-30) |
 | M5 Socket backend, GFN2-xTB | merged |
 | M6 Torch backend, MACE-OFF23, ML-RPMD study | merged (2026-11-04) |
-| M7–M8 | not briefed yet (see SPEC §11) |
+| M7 Dynamics (RPMD, TRPMD; M7b PA-CMD) | M7a brief approved (2026-11-04); Phase A |
+| M8 | not briefed yet (see SPEC §11) |
 
 Update this table when a milestone merges.
 
