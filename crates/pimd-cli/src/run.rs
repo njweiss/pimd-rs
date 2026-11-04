@@ -705,10 +705,20 @@ impl Driver {
                 }
                 let mut corr = || -> Result<CentroidCorrelation, CliError> {
                     let len = r.usize()?;
-                    let c = CentroidCorrelation::from_bytes(r.take(len)?)
+                    let bytes = r.take(len)?;
+                    let c = CentroidCorrelation::from_bytes(bytes)
                         .map_err(|e| CliError::Checkpoint(format!("correlation block: {e}")))?;
                     if c.mean().len() != dy.n_lags {
                         return Err(bad("correlation block: n_lags differs from the config"));
+                    }
+                    // n_atoms is the second u64 of the `to_bytes` layout; from_bytes checked
+                    // the length.
+                    let n_atoms = bytes
+                        .get(8..16)
+                        .and_then(|b| b.try_into().ok())
+                        .map(u64::from_le_bytes);
+                    if n_atoms != Some(n as u64) {
+                        return Err(bad("correlation block: n_atoms differs from the config"));
                     }
                     Ok(c)
                 };

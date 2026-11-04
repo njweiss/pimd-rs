@@ -147,7 +147,8 @@ impl CentroidCorrelation {
         self.sum.iter().map(|s| s / n).collect()
     }
 
-    /// σ of the mean (Y-4), length n_lags; NaN with fewer than two segments.
+    /// σ of the mean (Y-4), length n_lags; NaN with fewer than two segments. A sample variance
+    /// made slightly negative by rounding is taken as zero.
     pub fn sem(&self) -> Vec<f64> {
         if self.n_segments < 2 {
             return vec![f64::NAN; self.n_lags];
