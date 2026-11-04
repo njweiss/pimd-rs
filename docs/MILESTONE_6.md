@@ -182,4 +182,4 @@ Training or fine-tuning (CLAUDE.md "Do not"); shipping MACE-OFF23 weights or exp
 - [x] M6b: all tests pass; `check.sh` exits 0 (default and `CHECK_TORCH=1`), including thread-count runs
 - [x] M6b: long validation passes; agreement levels added to `validation/RESULTS.md`
 - [x] M6b: review done; no blocking findings; `QUESTIONS.md` has no open entries
-- [ ] M6c: study plan, log and writeup committed; README cites MACE-OFF23 (licence confirmed 2026-11-01)
+- [x] M6c: study plan, log and writeup committed; README cites MACE-OFF23 (licence confirmed 2026-11-01)

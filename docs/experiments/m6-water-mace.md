@@ -348,3 +348,132 @@ leaves it above P ≈ 16 (water) and P ≈ 8 (ethanol). CUDA beats four CPU thre
 ethanol P = 32, is 4.6× faster than f64 on CUDA. (4) Determinism costs ≤ 3 %. (5) For a 3-atom
 molecule the xTB socket path is 6–12× cheaper than the fastest MACE configuration at each P; the pilot's
 7.1 ms/step for xTB P = 32 included trajectory and observable output, absent here.
+
+## Writeup
+
+One water molecule in the gas phase at 300 K, PIMD with the merged engine (BAOAB + PILE-L, exact
+free ring-polymer propagator), MACE-OFF23 small in process (float64) against GFN2-xTB over the
+socket. Every number below is in a log entry above (cited by date and heading) and is regenerated
+by `analyse.py`, `harmonic.py` and `bench.py` into `results/`. Energies are E − V_min of each model,
+per molecule, in Eh; lengths in bohr unless stated; σ in parentheses on the last digits.
+
+### Engine behaviour
+
+- **Classical limit.** At P = 1 every run gives E − V_min = 6 k_BT = 0.005700 to within
+  +0.000012 … +0.000048 (≤ 2.5σ) (Analysis, 2026-11-03), and the two estimators coincide, as they
+  must.
+- **Estimator consistency needs the time-step limit at P = 32.** At dt = 0.5 fs ⟨E_vir⟩ − ⟨E_prim⟩
+  reaches 5–8σ at P = 32 for both models (Analysis). Extra runs at 0.25 and 0.125 fs (xTB) and
+  0.25 fs (MACE) show the gap falls as dt² and extrapolates to zero, −0.13(36)e-4 (xTB) and
+  −0.26(68)e-4 (MACE), with the same slope for both models (Time-step check, result, 2026-11-03;
+  MACE time-step run, result, 2026-11-04). The disagreement is an O(dt²) integrator bias, not an
+  engine defect; nothing was filed in QUESTIONS.md. At 0.5 fs the virial estimator is the less
+  biased one: E_vir high by +1.4(4)e-4 (xTB) and +0.9(5)e-4 (MACE), E_prim low by −2.1(6)e-4 and
+  −2.7(9)e-4, i.e. ≤ 1.5 % of the quantum shift. Practical consequence: for O–H stretches at
+  P = 32, 0.5 fs is adequate for ⟨E_vir⟩ and geometry at the 1 % level but not for an
+  estimator-consistency check at the 5σ level of 100 ps runs. The plan's assumption ("no bias
+  beyond M5's measurement") was wrong at P = 32.
+- **Reproducibility.** A second seed at P = 32 agrees within 1.5σ in every observable (Analysis).
+
+### Q1. Quantum vs classical; MACE-OFF23 vs GFN2-xTB
+
+P = 32 minus P = 1, dt = 0.5 fs (Analysis), with the dt → 0 energy in brackets (Time-step
+checks):
+
+| | ΔE_vir | Δ⟨r_OH⟩ | Δ⟨θ_HOH⟩ (°) |
+|---|---|---|---|
+| MACE-OFF23 | 0.017590(31) [0.017486(41)] | +0.02654(9) | −0.16(2) |
+| GFN2-xTB | 0.016379(32) [0.016225(26)] | +0.03263(14) | −0.10(3) |
+| MACE − xTB at P = 32 | +0.00121(4) in E_vir | −0.0079(1) | −2.33(3) |
+
+- **Energy.** The quantum shift is 0.0175 Eh for MACE (hypothesis ≈ 0.018: holds), 7 % larger
+  than xTB's because MACE's harmonic frequencies are higher (harmonic shifts at P = 32: 0.01789
+  vs 0.01667; Minima and harmonic analysis). P = 8 reaches 68 % of the P = 32 shift, P = 16 90 %;
+  from the harmonic curve P = 32 is 96 % of the P → ∞ shift (hypothesis "not converged at P = 8,
+  within a few per cent at P = 32": holds). `results/fig_energy_vs_p.png`.
+- **Geometry.** Quantum fluctuations lengthen ⟨r_OH⟩ by 0.027 (MACE) and 0.033 bohr (xTB) and close
+  ⟨θ⟩ by ≈ 0.1–0.2° (`results/fig_r_oh.png`). Hypothesis 0.01–0.03 bohr: holds for MACE; xTB's
+  0.0326(1) is above the stated range by > 5σ. θ change < 1°: holds for both.
+- **Why MACE's ⟨r_OH⟩ is shorter.** The hypothesis (MACE shorter than xTB) holds, −0.0079(1)
+  bohr at P = 32, but not for the reason given: the two minima have almost the same r_e (1.81181
+  vs 1.81265 bohr), so the difference comes from the stretch potential away from the minimum.
+  Already classically (P = 1) MACE's ⟨r_OH⟩ is 0.0018 bohr shorter (thermal anharmonic
+  expansion), and the quantum expansion is 0.0061 bohr smaller; xTB's O–H stretch is softer
+  (harmonic frequencies 5–8 % lower) and more anharmonic.
+
+**Against the literature** (cited, not computed here):
+
+| | MACE-OFF23 small | GFN2-xTB | Reference |
+|---|---|---|---|
+| r_e (Å) | 0.95877 | 0.95921 | 0.95785, adiabatic r_e (Császár et al., *J. Chem. Phys.* 122, 214305 (2005)) |
+| θ_e (°) | 104.95 | 107.23 | 104.50 (same source) |
+| Harmonic ω₂, ω₁, ω₃ (cm⁻¹) | 1 632.7, 3 844.4, 3 948.6 | 1 539.5, 3 642.9, 3 651.0 | 1 649, 3 832, 3 943 (experimental harmonic frequencies, NIST CCCBDB, H₂O; from Shimanouchi) |
+| Harmonic ZPE (cm⁻¹) | 4 713 | 4 417 | 4 712, from the CCCBDB harmonic frequencies |
+
+MACE-OFF23 small reproduces water's equilibrium structure to 0.001 Å and 0.45°, and its harmonic
+frequencies to within 1 % (bend) and 0.3 % (stretches); its harmonic ZPE is within 1 cm⁻¹ of the
+experimental-harmonic one, closer than the frequency errors alone would suggest (they cancel).
+GFN2-xTB's angle is 2.7° too wide and its frequencies 5–7 % too low, which is why its quantum
+energy shift is smaller and its quantum bond expansion larger. Vibrationally averaged literature
+geometries and the anharmonic ZPE were planned for this table but are left out: no primary source
+was checked for them.
+
+### Q2. Harmonic cross-check
+
+PIMD ⟨E_vir⟩ minus the exact P-bead harmonic energy of the model's own frequencies (Minima and
+harmonic analysis; Analysis), as a fraction of the harmonic quantum shift at that P:
+
+| H₂O MACE | P = 4 | P = 8 | P = 16 | P = 32 (0.5 fs) | P = 32, dt → 0 |
+|---|---|---|---|---|---|
+| E_vir − harmonic | −0.4(3.5)e-5 | −1.13(27)e-4 | −2.34(28)e-4 | −2.72(27)e-4, −2.98(27)e-4 | −3.76(38)e-4 |
+| fraction of shift | −0.1 % | −0.9 % | −1.5 % | −1.5 %, −1.7 % | −2.1 % |
+
+GFN2-xTB at P = 32: −2.6e-4 at 0.5 fs, −4.13(20)e-4 = −2.5 % at dt → 0. The PIMD energy follows
+the harmonic one within 2.5 % of the quantum shift at every P for both models (hypothesis "within
+a few per cent": holds; plan criterion ≤ 5 %: met), and lies below it (anharmonicity lowers the
+energy: holds, > 9σ at dt → 0). The plan's secondary criterion ("constant in P, not growing")
+was phrased badly: an anharmonic correction grows with the quantum delocalisation, so it grows in
+absolute terms; as a fraction of the shift it is ≈ 1.5 % from P = 16 on at 0.5 fs, and the
+remaining growth to 2.1 % at P = 32 is the time-step bias, which grows with P. Geometry shifts have
+no harmonic counterpart and are entirely anharmonic, as stated.
+
+### Q3. Isotopes (MACE, P = 32 − P = 1, 0.5 fs; Analysis)
+
+- **D₂O/H₂O** ratio of the energy shift: 0.701 (0.012334(30)/0.017590(31)), against 0.699 from
+  the harmonic P = 32 energies and 0.707 for √(m_H/m_D) (hypothesis ≈ 0.7: holds). Bond
+  expansion 0.0192(1) bohr, ratio 0.72.
+- **HDO** resolves the two bonds: ⟨r_OH⟩ − ⟨r_OD⟩ = 0.00767(16) bohr, 48σ (hypothesis > 5σ:
+  holds). Each bond behaves as in its symmetric isotopologue: ⟨r_OH⟩ = 1.84406(11) vs 1.84391(7)
+  in H₂O, ⟨r_OD⟩ = 1.83639(12) vs 1.83640(9) in D₂O. The HDO energy shift, 0.014988(30), equals
+  the mean of the H₂O and D₂O shifts, 0.014962(22), within 0.7σ.
+- These comparisons are at 0.5 fs; the time-step bias of E_vir (≤ 0.5 % of the shift for H₂O,
+  smaller for the heavier isotopes) does not change the ratios at the quoted precision.
+
+### Q4. Throughput (Throughput survey, 2026-11-04)
+
+- The engine step costs the model evaluation plus ≤ 10 %: water f64 on one thread 10.7, 53.5,
+  106, 245 ms at P = 1, 8, 16, 32 against the spike's 10, 50, 105, 224 ms per evaluation
+  (hypothesis: holds).
+- CUDA overtakes four CPU threads at P = 16 for water and P = 8 for ethanol in float64
+  (hypothesis: holds); at P = 1 the CPU is 2–4× faster. CUDA has a floor of ≈ 26–30 ms per step;
+  float32 on CUDA stays on it up to P = 32 (30 ms for ethanol at P = 32, 4.6× faster than float64).
+  Deterministic CUDA costs ≤ 3 %.
+- For a three-atom molecule the GFN2-xTB socket path is 6–12× cheaper than the fastest MACE
+  configuration at each P; MACE's case is accuracy (above), not speed, at this size.
+- CUDA timings carry an unmeasured background: 25 % GPU utilisation from outside WSL at the start.
+
+### Deviations from the plan
+
+All logged where they happened: the harmonic self-check moved to P = 65 536 (Minima and harmonic
+analysis); the consistency σ taken from the difference series (Analysis); the time-step runs
+(two xTB, one MACE) added after the consistency check failed, each approved by the owner; the
+MACE dt fit uses both 0.5 fs seeds (MACE time-step run, result); `bench.sh` became `bench.py` and
+the throughput figure was redrawn with legends; the isotope comparison is a table, not a figure;
+the anharmonic ZPE and vibrationally averaged geometry are not cited (above). The engine was not
+modified.
+
+### Not shown
+
+Model-size sensitivity (small only), the condensed phase, real-time dynamics, and isotope runs
+at P other than 1 and 32. The P = 32 isotope numbers carry the 0.5 fs bias; only H₂O was
+extrapolated in dt.
