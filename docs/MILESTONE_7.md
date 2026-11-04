@@ -217,7 +217,10 @@ n_lags = 400                  # lags 0 … n_lags − 1, spacing corr_stride·dt
   `"sampling.n_steps"` or `"output.checkpoint_every"`. `observables.csv` and `trajectory.xyz` keep
   recording every production step at their strides, format unchanged. `trpmd_lambda` with
   `method = "rpmd"`, `n_lags` beyond L, `segment_steps` not a multiple of `corr_stride`, and
-  unknown keys are errors naming the `"dynamics.<key>"`.
+  unknown keys are errors naming the `"dynamics.<key>"` (Q29): a key that does not belong
+  (`trpmd_lambda` with RPMD, an unknown key) may be `CliError::Parse` with the key in the message
+  or `InvalidValue` naming it; an unknown `method` may be either; the non-multiple is
+  `InvalidValue("dynamics.segment_steps")`; range rules are `InvalidValue` naming their own key.
 - **No change without `[dynamics]`.** Config hash, checkpoint bytes (version 2 layout),
   `observables.csv`, `run.log` content apart from the config echo, and every M4–M6 test are
   unchanged. The `[dynamics]` fields enter the hash only when the section is present (appended
@@ -233,7 +236,8 @@ n_lags = 400                  # lags 0 … n_lags − 1, spacing corr_stride·dt
   `NaN` with a cell; f64 written with `{}`. Conversions only from `pimd_core::units` constants
   (U-3). `segments.csv`: `segment,step,h_start_eh,h_end_eh` with H_P per atom
   (`pimd_estimators::hamiltonian`/N) right after the redraw and at the segment end; with RPMD the
-  difference is the integrator's energy error (T-3). After a restart both files in the new
+  difference is the integrator's energy error (T-3). One row per segment; `segment` counts from 0
+  and `step` is the production step at the segment end (Q30). After a restart both files in the new
   `out_dir` hold only rows after the checkpoint (as `observables.csv`).
 - **P = 1.** RPMD at P = 1 is classical NVE MD; TRPMD at P = 1 has no internal modes and equals
   RPMD bitwise (the k = 0 coefficient is 1 and its noise term zero, but the draws still happen,
@@ -283,7 +287,10 @@ Statistical (`long-validation`; tolerance policy of WORKFLOW, σ from segments):
     C_vv(τ) at every lag within 5σ of the exact finite-dt result (C_xx(0)·[Mⁿ]_qq and
     C_vv(0)·[Mⁿ]_pp, with M the velocity-Verlet map for ω, and C_xx(0) = 3/(βmω²),
     C_vv(0) = 3/(βm)); the mean |h_end − h_start| of the RPMD `segments.csv` falls by a factor in
-    [3.5, 4.5] when dt halves.
+    [3.5, 4.5] when dt halves. Tests 10 and 11 drive the Y-1 cycle through the library, with
+    |h_end − h_start| computed by the `segments.csv` definition; the CLI has no `Harmonic` or
+    `DoubleWell` potential, and its cycle is pinned by test 9's reference-cycle comparison and by
+    test 12 (Q30).
 11. **Double well vs i-PI** (one atom, `DoubleWell` with barrier ≈ 3 k_BT, P = 16, RPMD and TRPMD
     λ = 0.5): C_xx(τ) and C_vv(τ) agree with i-PI driving the same potential through
     `ipi_client.py` (new backend `doublewell`) under the same segment protocol, within 5σ of the

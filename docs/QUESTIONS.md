@@ -12,7 +12,7 @@ Proposed resolution:
 Owner decision:
 ```
 
-Number new entries from Q28. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
+Number new entries from Q31. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
 brief, it moves to the index below; the full text stays in git history.
 
 ## Resolved (index)
@@ -48,27 +48,6 @@ Code and tests cite these numbers. Each decision now lives where the last column
 | Q25 | `pimd-cli` has its own `build.rs` with libtorch's rpath and `--no-as-needed` (link args do not propagate to dependent crates) | MILESTONE_6 "Clarifications" |
 | Q26 | `PIMD_MACE_MODEL` names the MACE `.model` file; the long test exports it to a temporary directory | MILESTONE_6 "Clarifications" |
 | Q27 | A float32 export is refused for `Dtype::F64` (`Backend`); found in M6b review (N6) | SPEC P-6; MILESTONE_6 "After review" |
-
-## Q28 (resolved) — Adding `Thermostat::Trpmd` breaks an exhaustive match in a locked M2 test
-Milestone: 7   Raised by: test author
-Spec text: T-4 / MILESTONE_7 decision 3: "Pluggable thermostat as a new enum variant `Thermostat::Trpmd { lambda }`".
-Test or code: crates/pimd-integrators/tests/baoab.rs:60 (`ref_baoab_step`, `match th`)
-What seems wrong / ambiguous: the M2 test matches `Thermostat` exhaustively, so the new variant is a compile error in a test outside M7. `#[non_exhaustive]` would not help (an external exhaustive match still needs a wildcard).
-Proposed resolution: Phase A added one arm, `Thermostat::Trpmd { .. } => unreachable!(..)`, with a comment citing this entry. No assertion or expected value of the M2 test changed; the arm is never reached (the test builds only `Off` and `PileL`). Owner to confirm the edit of a locked M2 test file.
-Owner decision (2026-11-04): accepted. The one `unreachable!` arm in `baoab.rs` is the only allowed change to the M2 test; it goes in the M7 `tests(m7):` commit.
-
-## Q29 (open) — Error variant and key for the `[dynamics]` rules that the brief only says "name the key"
-Milestone: 7   Raised by: test author
-Spec text: MILESTONE_7 "Clarifications": "`trpmd_lambda` with `method = "rpmd"`, `n_lags` beyond L, `segment_steps` not a multiple of `corr_stride`, and unknown keys are errors naming the `"dynamics.<key>"`"; required test 8: "each rule in "Clarifications" gives the named `InvalidValue`".
-Test or code: crates/pimd-cli/tests/config_m7.rs:88 (`assert_names_key`), :131 and :142 (`field_ranges_enforced`)
-What seems wrong / ambiguous: (1) The variant is not fixed for a key that does not belong (`trpmd_lambda` with RPMD) or is unknown: every other section reports those as `CliError::Parse` (serde `deny_unknown_fields`, M5 "does not belong to kind"), and `InvalidValue` needs a numeric `value`. (2) "`segment_steps` not a multiple of `corr_stride`" does not say which of the two keys is named.
-Proposed resolution (what the Phase A tests assume): (1) for `trpmd_lambda` with RPMD and for unknown keys, either `InvalidValue { what: "dynamics.<key>" }` or `Parse` whose message contains `<key>` passes; an unknown `method` string may be `Parse` or `InvalidValue`. (2) The non-multiple is `InvalidValue` naming `"dynamics.segment_steps"` (the brief attaches the rule to that field: `segment_steps: usize, // ≥ 1, multiple of corr_stride`). Range rules (`n_lags` = 0 or > L, `corr_stride` = 0, `segment_steps` = 0, `trpmd_lambda` ≤ 0, NaN or ±∞) are `InvalidValue` naming their own key. The owner may tighten (1) to one variant in a new test commit.
-Owner decision:
-
-## Q30 (open) — Required tests 10 and 11 run the segment cycle through the library, not the CLI
-Milestone: 7   Raised by: test author
-Spec text: MILESTONE_7 required test 10: "the mean |h_end − h_start| of the RPMD `segments.csv` falls by a factor in [3.5, 4.5]"; test 11: "`DoubleWell` … agree with i-PI".
-Test or code: crates/pimd-estimators/tests/m7_dynamics/mod.rs:90 (`run_cycle`), long_dynamics_harmonic.rs, long_dynamics_doublewell.rs; crates/pimd-cli/tests/dynamics_run.rs:264
-What seems wrong / ambiguous: the CLI has no `Harmonic` or `DoubleWell` potential (only `lj`, `socket`, `mace`), so a `segments.csv` cannot be produced for those systems without a socket client. Also, segments.csv's `segment` (0- or 1-based) and `step` (production step of the segment start or end) are not defined.
-Proposed resolution (what the Phase A tests do): tests 10 and 11 drive the Y-1 cycle through the library (`RingPolymerSim`, `set_thermostat`, `resample_momenta`, `centroid_velocity`, `Beads::centroid`, `CentroidCorrelation`), and compute |h_end − h_start| with the segments.csv definition (`hamiltonian`/N right after the redraw and at the segment end). The CLI's cycle is pinned instead by a deterministic comparison of a gas-phase `[dynamics]` run (summary, correlations.csv, segments.csv) with the same cycle written as a plain loop with hand-computed Y-3/Y-4/Y-5 (dynamics_run.rs `run_matches_reference_cycle`, 1e-12), and statistically by the neon rung (test 12, CLI). For segments.csv the tests require only one row per segment, `segment` increasing by 1 and `step` by the cycle length, and the H_P values; the numbering base and which step is printed are left to the implementer (the reference implementation writes 0-based segments and the production step at the segment end).
-Owner decision:
+| Q28 | Adding `Thermostat::Trpmd` allows one `unreachable!` arm in the M2 test `baoab.rs`, nothing else | MILESTONE_7 decision 3; commit 28cf388 |
+| Q29 | `[dynamics]` key errors: misplaced or unknown key is `Parse` (key in message) or `InvalidValue` naming it; non-multiple is `InvalidValue("dynamics.segment_steps")`; range rules name their own key | MILESTONE_7 "Clarifications" |
+| Q30 | Required tests 10 and 11 drive the Y-1 cycle through the library; `segments.csv` counts segments from 0, `step` = production step at the segment end | MILESTONE_7 "Clarifications", tests 10–11 |
