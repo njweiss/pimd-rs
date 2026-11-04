@@ -8,6 +8,9 @@ pub mod config;
 pub mod error;
 pub mod run;
 
-pub use config::{Config, OutputConfig, PotentialConfig, RdfConfig, SamplingConfig, SystemConfig};
+pub use config::{
+    Config, DynamicsConfig, DynamicsMethod, OutputConfig, PotentialConfig, RdfConfig,
+    SamplingConfig, SystemConfig,
+};
 pub use error::CliError;
-pub use run::{RunSummary, run, run_from_checkpoint};
+pub use run::{Correlations, RunSummary, run, run_from_checkpoint};

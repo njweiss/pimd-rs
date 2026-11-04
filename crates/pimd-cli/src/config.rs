@@ -24,6 +24,36 @@ pub struct Config {
     pub sampling: SamplingConfig,
     /// `[output]`.
     pub output: OutputConfig,
+    /// `[dynamics]` (MILESTONE_7): RPMD/TRPMD segment cycles (Y-1); `None` without the section.
+    pub dynamics: Option<DynamicsConfig>,
+}
+
+/// The dynamics of a segment (Y-1).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DynamicsMethod {
+    /// `method = "rpmd"`: `Thermostat::Off` during segments.
+    Rpmd,
+    /// `method = "trpmd"`: `Thermostat::Trpmd { lambda }` during segments (T-4).
+    Trpmd {
+        /// `trpmd_lambda`, > 0 (default 0.5).
+        lambda: f64,
+    },
+}
+
+/// `[dynamics]` (MILESTONE_7 "Config format"): the segment cycle of Y-1 and the correlation
+/// sampling of Y-3/Y-4.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DynamicsConfig {
+    /// `method` and its parameter.
+    pub method: DynamicsMethod,
+    /// PILE-L steps before each segment, ≥ 0.
+    pub decorrelation_steps: usize,
+    /// Dynamics steps per segment, ≥ 1, a multiple of `corr_stride`.
+    pub segment_steps: usize,
+    /// Centroid sample every `corr_stride` segment steps, ≥ 1.
+    pub corr_stride: usize,
+    /// Lags 0 … n_lags − 1; 1 ≤ n_lags ≤ segment_steps/corr_stride + 1.
+    pub n_lags: usize,
 }
 
 /// `[system]`: N atoms with per-atom masses, in an orthorhombic periodic cell or in the gas phase
@@ -245,6 +275,7 @@ struct RawConfig {
     potential: RawPotential,
     sampling: RawSampling,
     output: RawOutput,
+    dynamics: Option<toml::Value>,
 }
 
 #[derive(Deserialize)]
@@ -423,7 +454,11 @@ impl RawConfig {
             potential: po,
             sampling: sa,
             output: out,
+            dynamics: dy,
         } = self;
+        if dy.is_some() {
+            unimplemented!("M7: [dynamics]");
+        }
 
         let n_atoms = at_least_one("system.n_atoms", sy.n_atoms)?;
         let n_beads = at_least_one("sampling.n_beads", sa.n_beads)?;
@@ -631,6 +666,7 @@ impl RawConfig {
             potential,
             sampling,
             output,
+            dynamics: None,
         })
     }
 }

@@ -28,6 +28,12 @@ pub enum Thermostat {
         /// Centroid time constant τ_0 in ħ/Eh, or `None` for γ_0 = 0.
         tau0: Option<f64>,
     },
+    /// Thermostatted RPMD (T-4): γ_0 = 0 and γ_k = 2·`lambda`·ω_k for every mode with ω_k > 0;
+    /// draw order and count as T-1. `lambda` > 0 and finite.
+    Trpmd {
+        /// Scaling λ of the critical damping 2ω_k of the internal modes (dimensionless).
+        lambda: f64,
+    },
 }
 
 /// BAOAB ring-polymer integrator with exact free propagation and optional PILE-L (I-1, I-2, T-1).
@@ -86,6 +92,7 @@ impl RingPolymerIntegrator {
             Thermostat::PileL { tau0: Some(tau0) } => {
                 Some(1.0 / positive_finite("tau0 (hbar/Eh)", tau0)?)
             }
+            Thermostat::Trpmd { .. } => unimplemented!("M7: T-4"),
         };
         let modes = NormalModes::with_transform(n_beads, beta, transform)?;
         // T-2: γ_0 = 1/τ_0 (or 0), γ_k = 2 ω_k for ω_k > 0; T-1: c_k = exp(−γ_k dt).
@@ -359,6 +366,23 @@ impl RingPolymerSim {
         self.forces = ev.forces;
         self.energies = ev.energies;
         Ok(())
+    }
+
+    /// Replaces the O step's thermostat (Y-1). Keeps state, forces, energies, dt, β, P and the
+    /// transform; no `evaluate`, no draws.
+    ///
+    /// Errors: `IntegratorError::InvalidValue` for a bad τ_0 or λ (as `RingPolymerIntegrator::new`);
+    /// the simulation is then unchanged.
+    pub fn set_thermostat(&mut self, thermostat: Thermostat) -> Result<(), IntegratorError> {
+        let _ = thermostat;
+        unimplemented!("M7: Y-1")
+    }
+
+    /// Redraws every bead momentum from N(0, m_i·P/β) (Y-2): atom i outer, bead j, dimension d
+    /// inner; P·N·3 normal draws. Positions, forces and energies unchanged.
+    pub fn resample_momenta(&mut self, rng: &mut Rng) {
+        let _ = rng;
+        unimplemented!("M7: Y-2")
     }
 
     /// The current state (bead representation).

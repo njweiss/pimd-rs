@@ -27,6 +27,25 @@ pub struct RunSummary {
     pub mean_e_vir: f64,
     /// (bin centres in bohr, g) when the config has an RDF (E-7), else `None`.
     pub rdf: Option<(Vec<f64>, Vec<f64>)>,
+    /// Centroid correlation functions of a `[dynamics]` run (Y-4, Y-5), else `None`.
+    pub correlations: Option<Correlations>,
+}
+
+/// Centroid time-correlation functions of a `[dynamics]` run (MILESTONE_7).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Correlations {
+    /// Lag spacing corr_stride·dt, ħ/Eh.
+    pub dt_lag: f64,
+    /// Segments averaged.
+    pub n_segments: usize,
+    /// C_vv(τ) (Y-4), (bohr/(ħ/Eh))², length n_lags.
+    pub c_vv: Vec<f64>,
+    /// σ of `c_vv` (Y-4).
+    pub c_vv_sem: Vec<f64>,
+    /// (C_xx, σ) in bohr² (Y-4); `None` with a cell.
+    pub c_xx: Option<(Vec<f64>, Vec<f64>)>,
+    /// Running Green–Kubo D(τ) (Y-5), bohr²/(ħ/Eh).
+    pub diffusion: Vec<f64>,
 }
 
 /// Runs `config` from its initial positions (or the initial lattice): `n_equil` equilibration
@@ -314,6 +333,7 @@ impl Driver {
             mean_e_prim: self.sum_e_prim / n,
             mean_e_vir: self.sum_e_vir / n,
             rdf,
+            correlations: None,
         })
     }
 

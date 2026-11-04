@@ -22,12 +22,17 @@ Backends:
        forces = -gradient, virial zeros (not used: no pressure is computed in M5). Gas phase only:
        h must be zero unless --pbc none (i-PI always sends its cell, so the i-PI reference runs
        pass --pbc none).
+  doublewell  SPEC P-2 (MILESTONE_7): V = sum over atoms and components of a x^4 - b x^2, forces
+       -(4 a x^3 - 2 b x) per component, virial zeros (not used). An external field: the cell h
+       is ignored.
 
 Usage (from the repository root):
     pixi run -e ref python crates/pimd-socket/tests/clients/ipi_client.py \
         --address unix:/tmp/x.sock lj --epsilon 1.1e-4 --sigma 5.19 --cutoff 11.4 --shift
     pixi run -e ref python crates/pimd-socket/tests/clients/ipi_client.py \
         --address localhost:31415 xtb --symbols O H H
+    pixi run -e ref python crates/pimd-socket/tests/clients/ipi_client.py \
+        --address unix:/tmp/x.sock doublewell --a 0.125 --b 1.0
 --address takes "unix:/path" or "host:port" (as the engine's config). For i-PI's own Unix sockets
 (/tmp/ipi_<name>) pass the full path. The client retries connecting for --patience seconds.
 """
@@ -144,6 +149,17 @@ class Xtb:
         return float(res.get("energy")), -np.asarray(res.get("gradient")), np.zeros((3, 3))
 
 
+class DoubleWell:
+    def __init__(self, a, b):
+        self.a, self.b = a, b
+
+    def compute(self, pos, h):
+        x2 = pos * pos
+        energy = float((self.a * x2 * x2 - self.b * x2).sum())
+        forces = -(4.0 * self.a * x2 * pos - 2.0 * self.b * pos)
+        return energy, forces, np.zeros((3, 3))
+
+
 def serve(sock, model):
     need_init, result = True, None
     while True:
@@ -198,9 +214,14 @@ def main():
     xtb.add_argument("--symbols", nargs="+", required=True)
     xtb.add_argument("--charge", type=float, default=0.0)
     xtb.add_argument("--uhf", type=int, default=0)
+    dw = sub.add_parser("doublewell")
+    dw.add_argument("--a", type=float, required=True, help="Eh/bohr^4")
+    dw.add_argument("--b", type=float, required=True, help="Eh/bohr^2")
     a = ap.parse_args()
     if a.backend == "lj":
         model = LennardJones(a.epsilon, a.sigma, a.cutoff, a.shift, a.pbc)
+    elif a.backend == "doublewell":
+        model = DoubleWell(a.a, a.b)
     else:
         model = Xtb(a.symbols, a.charge, a.uhf, a.pbc)
     sock = connect(a.address, a.patience)
