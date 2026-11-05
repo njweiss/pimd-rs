@@ -11,8 +11,8 @@ pub mod rdf;
 
 pub use correlation::{CentroidCorrelation, centroid_velocity, green_kubo};
 pub use energy::{
-    hamiltonian, kinetic_primitive, kinetic_virial, potential_mean, spring_energy, total_primitive,
-    total_virial,
+    hamiltonian, hamiltonian_dynamical, kinetic_primitive, kinetic_virial, potential_mean,
+    spring_energy, total_primitive, total_virial,
 };
 pub use error::EstimatorError;
 pub use pressure::{kinetic_classical, pressure_classical};

@@ -4,7 +4,7 @@
 //! have shape `[P, N, 3]` (bohr, Eh/bohr), `masses` length N (m_e), `energies` length P (Eh),
 //! β in Eh⁻¹. Every function panics if the input shapes disagree (Q4).
 
-use pimd_core::Beads;
+use pimd_core::{Beads, NormalModes};
 use pimd_integrators::RingState;
 
 /// E_spring = Σ_j Σ_i ½ m_i ω_P² |q_{j,i} − q_{j+1,i}|², with ω_P = P/β and cyclic j (E-5).
@@ -90,6 +90,20 @@ pub fn hamiltonian(state: &RingState, beta: f64, energies: &[f64]) -> f64 {
         }
     }
     kinetic + spring + energies.iter().sum::<f64>()
+}
+
+/// H̃_P with dynamical masses (Y-6): Σ_k Σ_i |p̃_{k,i}|²/(2 m_i s_k) with p̃ = `modes.to_normal(p)`,
+/// plus springs and Σ energies as `hamiltonian`. Eh.
+/// Panics on the shape mismatches of `hamiltonian`, or if `mass_factors.len()` ≠ P.
+pub fn hamiltonian_dynamical(
+    state: &RingState,
+    beta: f64,
+    energies: &[f64],
+    modes: &NormalModes,
+    mass_factors: &[f64],
+) -> f64 {
+    let _ = (state, beta, energies, modes, mass_factors);
+    unimplemented!("M7b: Y-6 dynamical Hamiltonian")
 }
 
 pub(crate) fn assert_masses(q: &Beads, masses: &[f64]) {
