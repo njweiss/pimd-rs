@@ -90,13 +90,15 @@ All return totals over atoms and Cartesian components, in Eh. The energy estimat
 
 ## 8a. Dynamics
 
-Ring-polymer dynamics for Kubo-transformed time-correlation functions of the centroid (RPMD, TRPMD).
+Ring-polymer dynamics for Kubo-transformed time-correlation functions of the centroid (RPMD, TRPMD, PA-CMD).
 
 - **Y-1** Segment cycle. After `n_equil` thermostatted steps, production is a sequence of cycles, each: (a) `decorrelation_steps` steps with the sampling thermostat (PILE-L, T-1/T-2); (b) the momentum redraw Y-2; (c) `segment_steps` steps with the dynamics thermostat (`Off` for RPMD, `Trpmd` for TRPMD). Switching thermostat never evaluates the potential: the forces at the end of one phase are reused by the next (I-3). One `pimd_core::Rng` drives every draw in the order the draws occur (D-2).
-- **Y-2** Momentum redraw: every bead momentum p_{j,i,d} ← sqrt(m_i·P/β)·ξ, ξ ~ N(0, 1), drawn atom i outermost, then bead j, then dimension d (the order of the initial draw); P·N·3 draws. Positions and forces are unchanged.
+- **Y-2** Momentum redraw: every bead momentum p_{j,i,d} ← sqrt(m_i·P/β)·ξ, ξ ~ N(0, 1), drawn atom i outermost, then bead j, then dimension d (the order of the initial draw); P·N·3 draws. Positions and forces are unchanged. With an adiabatic frequency Ω (Y-6): draw z_{j,i,d} = sqrt(m_i·P/β)·ξ in the same order, transform to normal modes, multiply mode k by √s_k, transform back; draw order and count unchanged.
 - **Y-3** Centroid samples: v̄_i = (1/P) Σ_j p_{j,i}/m_i (bohr per ħ/Eh) and q̄_i = (1/P) Σ_j q_{j,i} (bohr, as stored, not wrapped). Within a segment, sample s = 0, 1, …, L − 1 is taken at segment step s·`corr_stride` (s = 0 right after the redraw, before the first dynamics step), so L = `segment_steps`/`corr_stride` + 1.
 - **Y-4** Correlation estimator. For one segment with samples x(0) … x(L − 1) of N atoms and lag τ = 0 … `n_lags` − 1 (n_lags ≤ L): C_seg(τ) = (1/(N·(L − τ))) Σ_{s=0}^{L−1−τ} Σ_i x_i(s)·x_i(s + τ), the dot product over x, y, z, summed s outermost, then i, then d. The estimate is the mean of C_seg over segments (equal weights, summed in segment order); its σ is the sample standard deviation of C_seg (n − 1 denominator) over √n_segments. C_vv uses v̄, C_xx uses q̄. Lag τ is the time τ·`corr_stride`·dt. At τ = 0: C_vv(0) = 3/(β m) for equal masses; C_xx(0) = ⟨|q̄|²⟩ of the finite-P ensemble.
 - **Y-5** Green–Kubo: D(τ_n) = (1/3) ∫_0^{τ_n} C_vv dt by the trapezoid rule on the lag grid, D(0) = 0, in bohr²/(ħ/Eh). Meaningful for a single species only.
+- **Y-6** Dynamical masses (PA-CMD). With an adiabatic frequency Ω > 0 (Eh/ħ), mode k of atom i has dynamical mass m_i·s_k with s_0 = 1 and s_k = (ω_k/Ω)² for ω_k > 0, and dynamical frequency Ω_k = ω_k/√s_k (Ω for k ≥ 1, 0 for k = 0). These replace m_i and ω_k in I-2 (free propagation), in the T-1 noise variance ((1 − c_k²)·m_i·s_k·P/β) and in the friction of T-2/T-4 (γ_k = 2Ω_k, γ_k = 2λΩ_k). The spring constants m_i·s_k·Ω_k² = m_i·ω_k², and hence the configurational distribution, are unchanged; normal-mode momenta have variance m_i·s_k·P/β. Dynamical Hamiltonian H̃_P = Σ_k Σ_i |p̃_{k,i}|²/(2 m_i s_k) + springs + Σ_j V(q_j). Without Ω (s ≡ 1) nothing changes; at P = 1, s = [1] and Ω has no effect. Ω is a required input (no built-in formula); P^{P/(P−1)}/β is a suggested starting value.
+- **Y-7** PA-CMD cycle: Y-1 with Y-6 masses for the whole run (equilibration included); sampling thermostat PILE-L (T-1/T-2 with Y-6), segment thermostat `Trpmd { lambda }` (T-4 with Y-6: centroid NVE, internal modes γ = 2λΩ). Y-3 … Y-5 unchanged (the centroid mass is physical).
 
 ## 9. Potentials
 
@@ -133,7 +135,7 @@ Ring-polymer dynamics for Kubo-transformed time-correlation functions of the cen
 | **R1** | **Release gate: owner decides whether to publish** | |
 | M5 | i-PI-protocol socket backend; bridge validation (LJ served from Python); GFN2-xTB; engine vs i-PI on xTB | A/B/C |
 | M6 | In-process torch backend (spike first), MACE-OFF23 adapter, gas-phase ML-RPMD study | engine: A/B/C; study: experiment log |
-| M7 | Dynamics: M7a RPMD and TRPMD (T-4, Y-1 … Y-5), centroid time-correlation functions; M7b PA-CMD | A/B/C (M7b briefed after M7a) |
+| M7 | Dynamics: M7a RPMD and TRPMD (T-4, Y-1 … Y-5), centroid time-correlation functions; M7b PA-CMD (Y-6, Y-7) | A/B/C |
 | M8 | Solvated ligand: PBC with larger batches, ML/MM decision | decide at start |
 
 Notes for later milestones:
