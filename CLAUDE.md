@@ -56,7 +56,7 @@ pixi run test-validation        # same as CHECK_LONG=1 ./scripts/check.sh
 | M4 Quantum liquid, then release gate R1 | merged; R1: hold (2026-10-30) |
 | M5 Socket backend, GFN2-xTB | merged |
 | M6 Torch backend, MACE-OFF23, ML-RPMD study | merged (2026-11-04) |
-| M7 Dynamics (RPMD, TRPMD; M7b PA-CMD) | M7a merged (2026-11-04); M7b brief approved (2026-11-04) |
+| M7 Dynamics (RPMD, TRPMD; M7b PA-CMD) | M7a merged (2026-11-04); M7b merged (2026-11-05) |
 | M8 | not briefed yet (see SPEC §11) |
 
 Update this table when a milestone merges.

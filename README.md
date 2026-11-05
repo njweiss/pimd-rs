@@ -7,7 +7,7 @@ distribution function. Potentials sit behind a model-agnostic `Potential` trait 
 interatomic potentials can be added without changes to the engine; the current potentials are
 Lennard-Jones (periodic, neighbor lists), harmonic, a quartic double well, external codes over the
 i-PI socket protocol (e.g. GFN2-xTB), and MACE models in process through libtorch (feature
-`torch`). Ring-polymer dynamics (RPMD and thermostatted RPMD) gives Kubo-transformed centroid
+`torch`). Ring-polymer dynamics (RPMD, thermostatted RPMD and partially adiabatic centroid MD) gives Kubo-transformed centroid
 velocity and position autocorrelations and the Green–Kubo diffusion coefficient. Atomic units internally, f64 throughout, and results that are bitwise identical across thread counts and
 across checkpoint/restart.
 
@@ -22,9 +22,10 @@ across checkpoint/restart.
 | M5 Socket backend | i-PI socket client, water with GFN2-xTB | merged |
 | M6 Torch backend | in-process MACE (TorchScript, CPU/CUDA), ML-PIMD study of water with MACE-OFF23 | merged |
 | M7a Dynamics | RPMD and TRPMD segments, centroid correlation functions, Green–Kubo D; double well and liquid neon vs i-PI | merged |
+| M7b PA-CMD | partially adiabatic centroid MD (dynamical masses, adiabatic frequency Ω); harmonic, double well and liquid neon vs i-PI | merged |
 
 Release gate R1 (after M4): on hold; not yet published. Not implemented: electrostatics,
-constraints, centroid MD (PA-CMD, planned as M7b), non-orthorhombic cells, Python bindings.
+constraints, non-orthorhombic cells, Python bindings.
 The rules and conventions are in [`docs/SPEC.md`](docs/SPEC.md); the process is in
 [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
 

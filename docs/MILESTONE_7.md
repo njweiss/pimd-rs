@@ -1,7 +1,7 @@
 # Milestone 7: Ring-polymer dynamics (RPMD, TRPMD; PA-CMD in M7b)
 
 Status: M7a **approved and merged (2026-11-04)** (SPEC T-4 and §8a Y-1 … Y-5 added); M7b
-**approved (2026-11-04)**, brief at the end of this file.
+**approved (2026-11-04) and merged (2026-11-05)**, brief at the end of this file.
 
 | Phase | Flow | Output |
 | --- | --- | --- |
@@ -353,7 +353,7 @@ above, and the zero clamp of a rounding-negative variance documented on `sem`.
 
 ## M7b brief (PA-CMD)
 
-Status: **approved (2026-11-04)**; Y-6, Y-7 and the Y-2 amendment added to SPEC. M7a is merged (main at e6008c9); M7b runs its own A/B/C
+Status: **approved (2026-11-04), merged (2026-11-05)**; Y-6, Y-7 and the Y-2 amendment added to SPEC. M7a is merged (main at e6008c9); M7b runs its own A/B/C
 with tests committed as `tests(m7b):`.
 
 Crates touched: `pimd-integrators` (dynamical masses in the integrator), `pimd-estimators`
@@ -575,6 +575,6 @@ elevated-temperature CMD variants.
 ### Acceptance (M7b)
 
 - [x] Owner approves this brief, Y-6, Y-7, the Y-2 amendment and the public API
-- [ ] All tests pass; `check.sh` exits 0
-- [ ] Long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); results in `validation/RESULTS.md`
-- [ ] Review done; no blocking findings; `QUESTIONS.md` has no open entries
+- [x] All tests pass; `check.sh` exits 0
+- [x] Long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); results in `validation/RESULTS.md`
+- [x] Review done; no blocking findings; `QUESTIONS.md` has no open entries
