@@ -44,6 +44,8 @@ pub struct RingPolymerIntegrator {
     /// Inverse temperature, Eh⁻¹.
     beta: f64,
     modes: NormalModes,
+    /// Friction rule (γ_0, scale) of the thermostat (see `friction`); `None` for `Off`.
+    gammas: Option<(f64, f64)>,
     /// c_k = exp(−γ_k dt) per mode, aligned with the `modes` columns (T-1, T-2);
     /// `None` for `Thermostat::Off`, whose O step is the identity and draws nothing (T-3).
     c_k: Option<Vec<f64>>,
@@ -51,6 +53,8 @@ pub struct RingPolymerIntegrator {
     omega: Option<f64>,
     /// Y-6 mass factors s_k, length P, in `NormalModes` column order; all 1.0 without Ω.
     mass_factors: Vec<f64>,
+    /// Dynamical frequencies Ω_k (Y-6), Eh/ħ, in `NormalModes` column order; ω_k without Ω.
+    dyn_freqs: Vec<f64>,
 }
 
 /// Returns `v` if it is positive and finite, else `IntegratorError::InvalidValue` named `what`.
@@ -93,23 +97,39 @@ impl RingPolymerIntegrator {
         positive_finite("beta (1/Eh)", beta)?;
         let gammas = friction(thermostat)?;
         let modes = NormalModes::with_transform(n_beads, beta, transform)?;
-        let c_k = gammas.map(|g| ou_coefficients(g, &modes, dt));
+        let dyn_freqs = modes.frequencies().to_vec();
+        let c_k = gammas.map(|g| ou_coefficients(g, &dyn_freqs, dt));
         Ok(RingPolymerIntegrator {
             dt,
             beta,
             mass_factors: vec![1.0; modes.n_beads()],
             modes,
+            gammas,
             c_k,
             omega: None,
+            dyn_freqs,
         })
     }
 
     /// PA-CMD dynamical masses (Y-6) with adiabatic frequency `omega` (Eh/ħ); recomputes c_k with
     /// the dynamical frequencies. Errors: `IntegratorError::InvalidValue` unless omega is
     /// positive and finite.
-    pub fn with_adiabatic_frequency(self, omega: f64) -> Result<Self, IntegratorError> {
-        let _ = omega;
-        unimplemented!("M7b: Y-6 dynamical masses")
+    pub fn with_adiabatic_frequency(mut self, omega: f64) -> Result<Self, IntegratorError> {
+        positive_finite("adiabatic frequency (Eh/hbar)", omega)?;
+        let w = self.modes.frequencies();
+        self.mass_factors = w
+            .iter()
+            .map(|&w| if w > 0.0 { (w / omega).powi(2) } else { 1.0 })
+            .collect();
+        self.dyn_freqs = w
+            .iter()
+            .map(|&w| if w > 0.0 { omega } else { 0.0 })
+            .collect();
+        self.c_k = self
+            .gammas
+            .map(|g| ou_coefficients(g, &self.dyn_freqs, self.dt));
+        self.omega = Some(omega);
+        Ok(self)
     }
 
     /// Ω, or `None` (physical masses).
@@ -179,11 +199,12 @@ impl RingPolymerIntegrator {
         }
     }
 
-    /// I-2 in normal-mode coordinates `qt`, `pt` (`[P, N, 3]`, mode-major) for time `t`.
+    /// I-2 in normal-mode coordinates `qt`, `pt` (`[P, N, 3]`, mode-major) for time `t`, with the
+    /// Y-6 masses m_i·s_k and frequencies Ω_k (m_i and ω_k without Ω).
     fn rotate_modes(&self, qt: &mut Beads, pt: &mut Beads, masses: &[f64], t: f64) {
         let n3 = masses.len() * 3;
         let (qs, ps) = (qt.as_mut_slice(), pt.as_mut_slice());
-        for (k, &w) in self.modes.frequencies().iter().enumerate() {
+        for (k, (&w, &sk)) in self.dyn_freqs.iter().zip(&self.mass_factors).enumerate() {
             let mode = k * n3..(k + 1) * n3;
             let pairs = qs[mode.clone()]
                 .chunks_exact_mut(3)
@@ -191,6 +212,7 @@ impl RingPolymerIntegrator {
             if w > 0.0 {
                 let (s, c) = (w * t).sin_cos();
                 for ((q, p), &m) in pairs.zip(masses) {
+                    let m = m * sk;
                     for (q, p) in q.iter_mut().zip(p) {
                         let (q0, p0) = (*q, *p);
                         *q = c * q0 + s / (m * w) * p0;
@@ -207,7 +229,8 @@ impl RingPolymerIntegrator {
         }
     }
 
-    /// T-1 on normal-mode momenta `pt`; draws k outermost, then atom i, then d. No-op for `Off`.
+    /// T-1 on normal-mode momenta `pt` with the Y-6 masses m_i·s_k; draws k outermost, then atom
+    /// i, then d. No-op for `Off`.
     fn thermostat_modes(&self, pt: &mut Beads, masses: &[f64], rng: &mut Rng) {
         let Some(c_k) = &self.c_k else {
             return;
@@ -215,8 +238,9 @@ impl RingPolymerIntegrator {
         let pf = self.modes.n_beads() as f64;
         let n3 = masses.len() * 3;
         let ps = pt.as_mut_slice();
-        for (k, &c) in c_k.iter().enumerate() {
+        for (k, (&c, &sk)) in c_k.iter().zip(&self.mass_factors).enumerate() {
             for (p, &m) in ps[k * n3..(k + 1) * n3].chunks_exact_mut(3).zip(masses) {
+                let m = m * sk;
                 let amp = ((1.0 - c * c) * m * pf / self.beta).sqrt();
                 for x in p {
                     *x = c * *x + amp * rng.normal();
@@ -241,11 +265,11 @@ fn friction(thermostat: Thermostat) -> Result<Option<(f64, f64)>, IntegratorErro
     })
 }
 
-/// c_k = exp(−γ_k dt) per mode (T-1), aligned with the `modes` columns, for the friction rule
-/// `(γ_0, s)` of `friction`: γ_0 for k = 0, γ_k = s·ω_k otherwise.
-fn ou_coefficients((gamma0, s): (f64, f64), modes: &NormalModes, dt: f64) -> Vec<f64> {
-    modes
-        .frequencies()
+/// c_k = exp(−γ_k dt) per mode (T-1), aligned with the `freqs` columns, for the friction rule
+/// `(γ_0, s)` of `friction`: γ_0 for k = 0, γ_k = s·Ω_k otherwise, with the dynamical
+/// frequencies `freqs` (Y-6; ω_k without Ω).
+fn ou_coefficients((gamma0, s): (f64, f64), freqs: &[f64], dt: f64) -> Vec<f64> {
+    freqs
         .iter()
         .enumerate()
         .map(|(k, &w)| {
@@ -405,19 +429,22 @@ impl RingPolymerSim {
         Ok(())
     }
 
-    /// Replaces the O step's thermostat (Y-1). Keeps state, forces, energies, dt, β, P and the
-    /// transform; no `evaluate`, no draws.
+    /// Replaces the O step's thermostat (Y-1). Keeps state, forces, energies, dt, β, P, Ω (Y-6)
+    /// and the transform; no `evaluate`, no draws.
     ///
     /// Errors: `IntegratorError::InvalidValue` for a bad τ_0 or λ (as `RingPolymerIntegrator::new`);
     /// the simulation is then unchanged.
     pub fn set_thermostat(&mut self, thermostat: Thermostat) -> Result<(), IntegratorError> {
         let ig = &mut self.integrator;
-        ig.c_k = friction(thermostat)?.map(|g| ou_coefficients(g, &ig.modes, ig.dt));
+        let gammas = friction(thermostat)?;
+        ig.c_k = gammas.map(|g| ou_coefficients(g, &ig.dyn_freqs, ig.dt));
+        ig.gammas = gammas;
         Ok(())
     }
 
     /// Redraws every bead momentum from N(0, m_i·P/β) (Y-2): atom i outer, bead j, dimension d
-    /// inner; P·N·3 normal draws. Positions, forces and energies unchanged.
+    /// inner; P·N·3 normal draws. With Ω (Y-6, amended Y-2) the draw is then transformed to normal
+    /// modes, mode k scaled by √s_k and transformed back. Positions, forces and energies unchanged.
     pub fn resample_momenta(&mut self, rng: &mut Rng) {
         let pf = self.integrator.modes.n_beads() as f64;
         let beta = self.integrator.beta;
@@ -428,6 +455,22 @@ impl RingPolymerSim {
                 let v = [sd * rng.normal(), sd * rng.normal(), sd * rng.normal()];
                 p.set(j, i, v);
             }
+        }
+        if self.integrator.omega.is_some() {
+            let modes = &self.integrator.modes;
+            let mut pt = modes.to_normal(p);
+            let n3 = self.state.masses.len() * 3;
+            for (mode, &sk) in pt
+                .as_mut_slice()
+                .chunks_exact_mut(n3)
+                .zip(&self.integrator.mass_factors)
+            {
+                let f = sk.sqrt();
+                for x in mode {
+                    *x *= f;
+                }
+            }
+            *p = modes.to_beads(&pt);
         }
     }
 
