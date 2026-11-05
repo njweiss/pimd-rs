@@ -1,12 +1,12 @@
 # Milestone 7: Ring-polymer dynamics (RPMD, TRPMD; PA-CMD in M7b)
 
-Status: **approved (2026-11-04)**: M7a as below (SPEC T-4 and §8a Y-1 … Y-5 added); M7b
-outline only, briefed after M7a merges.
+Status: M7a **approved and merged (2026-11-04)** (SPEC T-4 and §8a Y-1 … Y-5 added); M7b
+**draft** at the end of this file.
 
 | Phase | Flow | Output |
 | --- | --- | --- |
 | M7a | A/B/C | RPMD and TRPMD segments, centroid time-correlation functions, Green–Kubo diffusion, `[dynamics]` in the config |
-| M7b | A/B/C, briefed after M7a merges | PA-CMD (outline at the end of this file) |
+| M7b | A/B/C | PA-CMD (brief at the end of this file) |
 
 Crates touched in M7a: `pimd-integrators` (`Thermostat::Trpmd`, `RingPolymerSim::set_thermostat`,
 `RingPolymerSim::resample_momenta`), `pimd-estimators` (centroid correlation, Green–Kubo),
@@ -351,20 +351,218 @@ Phase C at 7a64ac1: no blocking or should-fix findings. Accepted behaviour beyon
 Nits fixed after review: TRPMD added to the O-step and draw-count docs (D-4), the n_atoms check
 above, and the zero clamp of a rounding-negative variance documented on `sem`.
 
-## M7b outline (PA-CMD; to be briefed after M7a)
+## M7b brief (PA-CMD): draft, 2026-11-04
 
-- Dynamical masses: internal modes k ≥ 1 get mass m_i·(ω_k/Ω)² in the A step, so every internal
-  mode oscillates at Ω; the centroid keeps m_i. Statics (sampling, estimators) unchanged: the
-  thermostatted cycle still uses physical masses. Needs a SPEC rule extending I-2 to per-mode
-  masses, and a public way to pass them (`RingPolymerIntegrator` option or a new constructor).
-- Thermostat during segments: PILE-L on internal modes at γ = 2λΩ, centroid NVE (as i-PI's
-  `pa-cmd` with `pile_lambda`); momentum redraw from the scaled-mass distribution.
-- Config: `method = "pa-cmd"`, `cmd_omega_cm` (required), `cmd_lambda`. Ω stays a required,
-  tunable parameter (owner, 2026-11-04): Ω = P^{P/(P−1)}/β is a useful heuristic once the path
-  integral is converged in P, documented as a suggested starting value, not a default. The
-  brief should state the constraints it must meet (adiabatic separation: Ω well above the
-  physical frequencies of interest; dt resolving Ω) and suggest checking results at two Ω.
-- Time step: dt must resolve Ω; the brief states the bound and a test that the segment energy
-  error grows as Ω·dt rises.
-- Validation: harmonic exact (centroid decouples, as in M7a); double well and neon vs i-PI
-  `pa-cmd`; the curvature problem is not tested (no molecules with bends in scope).
+Status: **draft**, for owner approval. M7a is merged (main at e6008c9); M7b runs its own A/B/C
+with tests committed as `tests(m7b):`.
+
+Crates touched: `pimd-integrators` (dynamical masses in the integrator), `pimd-estimators`
+(H_P with dynamical masses), `pimd-cli` (`method = "pa-cmd"`), plus two i-PI generators.
+`pimd-core`, `pimd-potentials`, `pimd-socket` and `pimd-torch` are unchanged. Spec sections: 6
+(I-2), 7 (T-1, T-2, T-4), 8a (Y-2, new Y-6, Y-7).
+
+### Goal
+
+Partially adiabatic centroid MD (PA-CMD): the internal ring-polymer modes get dynamical masses
+that put them all at one adiabatic frequency Ω, and are thermostatted during the segments; the
+centroid keeps its physical mass and runs NVE. Same segment cycle, correlation functions and
+outputs as M7a. Validated against the exact harmonic result and i-PI's `pa-cmd` mode on the
+double well (two Ω) and liquid neon.
+
+### M7b decisions (owner, 2026-11-04)
+
+1. **Whole-run masses.** With PA-CMD the dynamical masses apply to the whole run (equilibration,
+   decorrelation and segments), as in i-PI. Positions sample the same distribution as with
+   physical masses (masses do not enter the configurational distribution); there is no mass
+   switch at segment boundaries. This replaces the outline's "the thermostatted cycle still uses
+   physical masses".
+2. **API.** Ω is an optional property of `RingPolymerIntegrator`, set once at construction; the
+   free propagator, the O step and `resample_momenta` read it. `set_thermostat` keeps it.
+3. **Thermostat rules generalised.** PILE-L and TRPMD use each mode's dynamical frequency
+   (ω_k without Ω, Ω with it) and dynamical mass. Without Ω every M7a rule and result is
+   unchanged, bitwise. PA-CMD segments use `Trpmd { lambda: cmd_lambda }` (centroid NVE, internal
+   modes γ = 2λΩ); decorrelation uses PILE-L (internal γ = 2Ω).
+4. **`cmd_lambda` is required** (no default). Literature checked 2026-11-04, no consensus value:
+   Rossi, Ceriotti, Manolopoulos (2014)'s λ = 1/2 is for TRPMD; the original PA-CMD (Hone,
+   Rossky, Voth, J. Chem. Phys. 124, 154103 (2006), second-hand) and DL_POLY Quantum 2.1
+   (arXiv:2412.17216) use Nosé–Hoover chains on the internal modes, not Langevin; Castro,
+   Trenins, Kapil, Rossi (arXiv:2508.16246, elevated-temperature variant) use γ_k = 2λΩ with
+   λ = 0.001–0.01 ("under-damped regime to minimize artificial coupling"). These values go in the
+   config documentation.
+5. **Ω is required** (`cmd_omega_cm`, cm⁻¹, via `units::HARTREE_IN_WAVENUMBERS`; no default).
+   Ω = P^{P/(P−1)}/β (ħ = 1) is documented as a suggested starting value once the path integral
+   is converged in P; for large P it tends to ω_P = P/β, so its time-step cost is about that of
+   plain PIMD. Published runs pick Ω by hand (16 000 cm⁻¹ in Rossi et al. 2014 for q-TIP4P/F
+   water; 24 000 cm⁻¹ in Castro et al.). Constraints stated in the docs: Ω well above the
+   physical frequencies of interest (adiabatic separation), Ω·dt well below π (all internal
+   modes sit at Ω, so a resonance would hit every mode at once); check results at two Ω.
+6. **Redraw.** Normals drawn in the Y-2 order, transformed to normal modes, mode k scaled by √s_k:
+   the same draw order and count as Y-2, the exact scaled-mass distribution (orthogonal
+   transform of iid normals). RPMD and TRPMD keep the M7a code path.
+7. **H_P for `segments.csv`** under PA-CMD uses normal-mode kinetic energy with dynamical masses
+   (new estimator function); RPMD/TRPMD keep `hamiltonian`. Nothing else in the outputs depends on
+   momenta (E_prim, E_vir, t_est use positions and forces).
+8. **Validation.** Harmonic exact; double well vs i-PI `pa-cmd` at Ω_h and 2Ω_h (Ω_h the
+   heuristic value); liquid neon vs i-PI `pa-cmd` at Ω_h. Not in scope: the curvature problem,
+   `wmax-cmd`.
+
+### SPEC additions (proposed)
+
+Section 8a, after Y-5:
+
+- **Y-6** Dynamical masses (PA-CMD). With an adiabatic frequency Ω > 0 (Eh/ħ), mode k of atom i
+  has dynamical mass m_i·s_k with s_0 = 1 and s_k = (ω_k/Ω)² for ω_k > 0, and dynamical
+  frequency Ω_k = ω_k/√s_k (= Ω for k ≥ 1, 0 for k = 0). These replace m_i and ω_k in I-2 (free
+  propagation), in the noise variance of T-1 ((1 − c_k²)·m_i·s_k·P/β) and in the friction of
+  T-2/T-4 (γ_k = 2Ω_k, γ_k = 2λΩ_k). The spring constants m_i·s_k·Ω_k² = m_i·ω_k² and hence the
+  configurational distribution are unchanged; normal-mode momenta have variance m_i·s_k·P/β. The
+  dynamical Hamiltonian is H̃_P = Σ_k Σ_i |p̃_{k,i}|²/(2 m_i s_k) + springs + Σ_j V(q_j). Without Ω
+  (s ≡ 1) nothing changes. P = 1: s = [1], Ω has no effect.
+- **Y-2** (amended) With Ω: draw z_{j,i,d} = sqrt(m_i·P/β)·ξ in the Y-2 order, transform to normal
+  modes, multiply mode k by √s_k, transform back. Draw order and count as Y-2.
+- **Y-7** PA-CMD cycle: Y-1 with Y-6 masses for the whole run; sampling thermostat PILE-L
+  (T-1/T-2 with Y-6), segment thermostat `Trpmd { lambda }` (T-4 with Y-6: centroid NVE).
+  Correlations Y-3 … Y-5 unchanged (the centroid mass is physical, so v̄ = (1/P) Σ_j p_j/m_i
+  still holds).
+
+### M7b: in scope
+
+| ID | Item |
+| --- | --- |
+| Y-6 | `RingPolymerIntegrator::with_adiabatic_frequency`, mass factors in I-2, T-1, T-2, T-4 |
+| Y-2 (amended) | `resample_momenta` with Ω |
+| Y-6 | `hamiltonian_dynamical` |
+| Y-7 | `method = "pa-cmd"` in `[dynamics]`; the cycle in the CLI |
+| D-2, D-3, D-4 | Draw order unchanged; bitwise results across thread counts and restarts |
+
+### Public API (stubs)
+
+```rust
+// pimd_integrators
+impl RingPolymerIntegrator {
+    /// PA-CMD dynamical masses (Y-6) with adiabatic frequency `omega` (Eh/ħ); recomputes c_k with
+    /// the dynamical frequencies. Errors: `IntegratorError::InvalidValue` unless omega is
+    /// positive and finite.
+    pub fn with_adiabatic_frequency(self, omega: f64) -> Result<Self, IntegratorError>;
+    /// Ω, or `None` (physical masses).
+    pub fn adiabatic_frequency(&self) -> Option<f64>;
+    /// s_k (Y-6), length P, in `NormalModes` column order; all 1.0 without Ω.
+    pub fn mass_factors(&self) -> &[f64];
+}
+
+impl RingPolymerSim {
+    /// The integrator (for Ω, the mass factors and the modes).
+    pub fn integrator(&self) -> &RingPolymerIntegrator;
+}
+// set_thermostat keeps Ω; resample_momenta follows the amended Y-2.
+
+// pimd_estimators
+/// H̃_P with dynamical masses (Y-6): Σ_k Σ_i |p̃_{k,i}|²/(2 m_i s_k) with p̃ = `modes.to_normal(p)`,
+/// plus springs and Σ energies as `hamiltonian`. Eh.
+/// Panics on the shape mismatches of `hamiltonian`, or if `mass_factors.len()` ≠ P.
+pub fn hamiltonian_dynamical(
+    state: &RingState, beta: f64, energies: &[f64], modes: &NormalModes, mass_factors: &[f64],
+) -> f64;
+```
+
+`pimd_cli`: `DynamicsMethod` gains `PaCmd { omega: f64 /* Eh/ħ */, lambda: f64 }`. No other
+type changes. Allowed new dependencies: none.
+
+### Config format (addition)
+
+```toml
+[dynamics]
+method = "pa-cmd"
+cmd_omega_cm = 400.0          # Ω in cm⁻¹, required; suggested start P^{P/(P−1)}/β (see docs)
+cmd_lambda = 1.0              # internal-mode friction γ = 2λΩ during segments, required
+decorrelation_steps = 250
+segment_steps = 500
+corr_stride = 2
+n_lags = 251
+```
+
+### Clarifications
+
+- `cmd_omega_cm` and `cmd_lambda` are required with `"pa-cmd"` and rejected with the other
+  methods (as `trpmd_lambda`, Q29 rules); `trpmd_lambda` is rejected with `"pa-cmd"`. Ω and λ
+  positive and finite, else `InvalidValue("dynamics.cmd_omega_cm")` / `("dynamics.cmd_lambda")`.
+  No check of Ω·dt (documented, not enforced).
+- Ω enters the integrator for equilibration and production. The config hash appends the method
+  tag, Ω and λ for `"pa-cmd"`; M7a configs hash as on main at e6008c9 (recorded in the test), and
+  configs without `[dynamics]` as at cf79a4d.
+- Checkpoint layout unchanged (bead momenta are stored as before; Ω comes from the config).
+- `segments.csv` H_P values use `hamiltonian_dynamical`/N under PA-CMD, `hamiltonian`/N
+  otherwise.
+- `run.log` echoes Ω in cm⁻¹ and Eh/ħ, and λ.
+
+### Required tests
+
+Deterministic:
+
+1. **Mass factors and free propagation (Y-6, I-2).** `mass_factors` = [1, (ω_k/Ω)², …] by hand
+   (P = 4, 8); Ω ≤ 0, NaN, ∞ rejected. `free_propagate` with Ω over t = 2π/Ω returns every
+   internal mode to its start (1e-12) while the centroid drifts by t·p̄/m; one step against I-2
+   written out with m_i·s_k and Ω. Without Ω, integrators are bitwise as on main.
+2. **O step with Ω (T-1, T-2, T-4 with Y-6).** Per-mode c_k = exp(−2Ω dt) (PILE-L internal),
+   exp(−2λΩ dt) (TRPMD), centroid as before; noise amplitude sqrt((1 − c_k²) m_i s_k P/β) through a
+   known draw sequence; draw order and count unchanged; `set_thermostat` keeps Ω (a switched sim
+   equals one built with Ω and the target thermostat, bitwise).
+3. **Redraw with Ω (amended Y-2).** Equal, to 1e-12, to the Y-2 draws from a cloned RNG passed
+   through the RP-4 matrix built in the test and scaled by √s_k; P·N·3 draws; positions, forces,
+   energies untouched; without Ω bitwise as M7a.
+4. **`hamiltonian_dynamical`.** Hand value (P = 4, N = 2); equals `hamiltonian` to 1e-12 relative
+   for s ≡ 1; under `Off` with Ω (LJ cluster, P = 4) the mean |ΔH̃| over a fixed trajectory falls
+   by a factor in [3.5, 4.5] when dt halves.
+5. **Harmonic centroid decouples with Ω.** As M7a test 5, with Ω set and under `Trpmd`: the
+   centroid follows the velocity-Verlet map to 1e-12 over 1 000 steps.
+6. **Config.** `"pa-cmd"` parses to `PaCmd` with Ω = cmd_omega_cm/HARTREE_IN_WAVENUMBERS; the
+   rules above; Ω and λ covered by the hash; M7a and no-`[dynamics]` hashes unchanged.
+7. **Run and restart.** A short PA-CMD run (LJ cluster, P = 4, 3 cycles) is byte-identical
+   across repeats and 1/4 threads; restart at a cycle end is bitwise; the CLI cycle equals a
+   plain-loop reference cycle (as M7a `run_matches_reference_cycle`) including `segments.csv`
+   with H̃_P.
+
+Statistical (`long-validation`):
+
+8. **Harmonic, exact** (M7a test 10 system: ω = 1, β = 8, P = 8 so ω_P = 1, dt = 0.1; Ω = 4,
+   Ω·dt = 0.4; λ = 1): C_xx and C_vv within 5σ of the M7a exact finite-dt expressions at every
+   lag (the centroid is unchanged by Y-6). Under `Off` with Ω = 2, 4, 8 (Ω·dt = 0.2, 0.4, 0.8)
+   at fixed dt, the mean segment |ΔH̃| is strictly increasing, each step resolved by > 5σ.
+9. **Double well vs i-PI `pa-cmd`** (M7a system, P = 16, β = 1.5, dt = 0.05, λ = 1) at
+   Ω_h = 16^{16/15}/β ≈ 12.83 Eh/ħ (Ω·dt ≈ 0.64) and 2Ω_h: C_xx and C_vv within 5σ_c of i-PI at
+   every lag, bias allowance 0. The DVR Kubo C_xx (already in `ipi_doublewell.json`) and the
+   Ω_h-vs-2Ω_h difference are reported in RESULTS.md, not gated.
+10. **Liquid neon vs i-PI + LAMMPS `pa-cmd`** (M4/M7a system, Ω_h ≈ 401 cm⁻¹, Ω·dt ≈ 0.15,
+    λ = 1): C_vv within 5σ_c at every lag, D(τ_max) within 5σ_c; C_vv(0) within 5σ of 3/(βm);
+    ⟨E_vir⟩ of the run within 5σ_c of the M4 i-PI value in `ipi_neon.json` (statics unchanged by
+    Y-6).
+
+New generators `gen_ipi_doublewell_cmd.py` and `gen_ipi_neon_cmd.py` (the locked M7a
+generators and data stay as they are); i-PI `normal_modes` with `<frequencies style="pa-cmd"
+units="inversecm">` and `pile_l` with `pile_lambda` = λ during segments, same scripted cycle as
+M7a. Phase A confirms in i-PI's source that its cm⁻¹ conversion is the same angular-frequency
+convention (ħΩ = Ω_cm/HARTREE_IN_WAVENUMBERS Eh). Expected wall times about 36 and 16 min; over
+2 h ⇒ shorten the protocol in the brief, not the tolerance.
+
+λ = 1 in the tests is a test value (distinct from TRPMD's 0.5 so that mixing the two keys is
+caught), not a recommendation.
+
+### Mutant ideas
+
+s_k = ω_k/Ω (not squared); Ω applied to the centroid; T-1 noise with m_i instead of m_i·s_k;
+friction from ω_k instead of Ω; redraw without the √s_k scaling; `segments.csv` with the bead
+kinetic energy under PA-CMD; cm⁻¹ conversion with an extra 2π; equilibration without Ω;
+`set_thermostat` dropping Ω; `cmd_lambda` read from `trpmd_lambda`.
+
+### Out of scope
+
+`wmax-cmd` and other mass schemes; the curvature problem (no bent molecules in scope);
+Nosé–Hoover chains on the internal modes; Ω from a formula (decision 5); a run-time Ω·dt check;
+elevated-temperature CMD variants.
+
+### Acceptance (M7b)
+
+- [ ] Owner approves this brief, Y-6, Y-7, the Y-2 amendment and the public API
+- [ ] All tests pass; `check.sh` exits 0
+- [ ] Long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); results in `validation/RESULTS.md`
+- [ ] Review done; no blocking findings; `QUESTIONS.md` has no open entries
