@@ -1,7 +1,7 @@
 # Validation results
 
-Agreement of pimd-rs with every reference used in milestones M1–M6b, and the performance table.
-M1–M4 numbers from branch `milestone-4`, M5 numbers from branch `milestone-5`, M6b numbers from branch `milestone-6` (pimd-rs 0.1.0, rustc 1.96.0). Every number below has one of these sources:
+Agreement of pimd-rs with every reference used in milestones M1–M7a, and the performance table.
+M1–M4 numbers from branch `milestone-4`, M5 numbers from branch `milestone-5`, M6b numbers from branch `milestone-6`, M7a numbers from branch `milestone-7` (pimd-rs 0.1.0, rustc 1.96.0). Every number below has one of these sources:
 
 - **[run]**: printed by the long validation suite, run for this file with
   `RAYON_NUM_THREADS=4 cargo test --workspace --release --all-features -- --nocapture`
@@ -21,7 +21,7 @@ Tolerance policy (`docs/WORKFLOW.md`): 5σ of the block-averaged estimate (block
 | Code | Version | Used for |
 |---|---|---|
 | LAMMPS | 22 Jul 2025 Update 6, conda `2025.07.22 cpu_py312_hdb376b3_mpi_openmpi_6` | M3 single point, trajectory, thermodynamics; LJ client of i-PI (M4); benchmark |
-| i-PI | 3.3.1 (conda `pyh5ded981_0`) | M4 liquid-neon PIMD; M5 water/GFN2-xTB PIMD |
+| i-PI | 3.3.1 (conda `pyh5ded981_0`) | M4 liquid-neon PIMD; M5 water/GFN2-xTB PIMD; M7a RPMD/TRPMD (double well, liquid neon) |
 | tblite | 0.7.0 (conda `py312h0536e37_2`) | M5 GFN2-xTB force client (`ipi_client.py xtb`), for both codes |
 | Python / numpy / scipy | 3.12.16 / 2.5.4 / 1.18.1 | reference generators (double well: numpy + scipy) |
 | matplotlib | 3.11.2 | plots only |
@@ -225,6 +225,87 @@ Batching all beads in one call vs one call per bead (tolerance 1e-12): \|ΔE\|/\
 max\|ΔF\|/max\|F\| 1.19e-15. Periodic box with atoms wrapped into [0, L) or shifted by lattice
 vectors (−2 … 2 box lengths per axis) vs the unwrapped positions (tolerance 1e-12):
 \|ΔE\|/\|E\| = 0, max\|ΔF\|/max\|F\| 2.98e-14 (wrapped) and 4.99e-14 (shifted).
+
+## M7a Dynamics: RPMD and TRPMD
+
+Numbers printed by `RAYON_NUM_THREADS=4 cargo test --release --features long-validation -p
+pimd-estimators --test long_dynamics_harmonic --test long_dynamics_doublewell -- --nocapture`
+and `cargo test --release --features long-validation -p pimd-cli --test long_neon_dynamics --
+--nocapture` on branch `milestone-7` (commit 8798036), after `CHECK_LONG=1 CHECK_IPI=1
+./scripts/check.sh` had passed on the same commit (934 tests, 0 failed; all 9 reference
+generators, including the two new i-PI ones, reproduced the committed files) [run]. Protocol
+(SPEC Y-1 … Y-5): PILE-L decorrelation, momentum redraw from N(0, mP/β), then an NVE (RPMD) or
+TRPMD (λ = 1/2: γ_0 = 0, γ_k = ω_k) segment; every sampled step of a segment is a time origin; σ
+from the segment-to-segment scatter, checked against blocks of 4 segments. Tolerances and their
+derivation: the doc comments of `crates/pimd-estimators/tests/long_dynamics_*.rs` and
+`crates/pimd-cli/tests/long_neon_dynamics.rs` [comment]. These numbers equal, to the printed
+digits, those recorded in the test headers for the reference implementation.
+
+### Harmonic oscillator vs the exact finite-dt result
+
+One atom, βω = 8, P = 8, ω dt = 0.1, 8 000 segments of 200 steps per method. For a harmonic
+potential the centroid decouples and follows the velocity-Verlet map M exactly, so
+C_xx(τ) = 3/(βmω²)·[Mⁿ]_qq and C_vv(τ) = 3/(βm)·[Mⁿ]_pp, with no time-step bias (tolerance 5σ at
+every lag, no allowance).
+
+| Method | C_xx worst lag | C_vv worst lag | C_xx(0) (exact 0.375) | C_vv(0) (exact 0.375) |
+|---|---|---|---|---|
+| RPMD | 0.68σ | 0.66σ | 0.3757 ± 0.0025 | 0.3746 ± 0.0025 |
+| TRPMD | 1.33σ | 0.99σ | 0.3781 ± 0.0025 | 0.3773 ± 0.0025 |
+
+RPMD energy error per segment, mean |H_P(end) − H_P(start)|/N: 7.1188e-3 at dt, 1.7399e-3 at
+dt/2, ratio 4.091 (required 3.5–4.5; O(dt²)).
+
+### Double well vs i-PI, and vs the exact quantum result
+
+One atom, m = 1, V = Σ_d (x_d⁴/8 − x_d²) (barrier 2 Eh = 3 k_BT at β = 1.5), P = 16, dt = 0.05;
+cycles of 200 PILE-L steps, redraw, 400-step segment sampled every 4 steps. pimd-rs: 6 400
+segments per method (library-driven, QUESTIONS Q30); i-PI 3.3.1 through the `doublewell`
+socket client: 1 600 segments per method from 8 chains [json]. Tolerance 5σ_c at every lag,
+bias allowance 0 (same splitting and dt).
+
+| Method | C_xx worst lag | C_vv worst lag | C_xx(0) pimd-rs | C_xx(0) i-PI | C_vv(0) pimd-rs | C_vv(0) i-PI |
+|---|---|---|---|---|---|---|
+| RPMD | 1.31σ_c | 2.22σ_c | 9.5759 ± 0.0108 | 9.5658 ± 0.0212 | 1.9967 ± 0.0154 | 2.0121 ± 0.0304 |
+| TRPMD | 1.84σ_c | 2.65σ_c | 9.5636 ± 0.0100 | 9.5786 ± 0.0200 | 2.0275 ± 0.0150 | 1.9965 ± 0.0286 |
+
+Against the exact quantum Kubo-transformed C_xx(t) from a DVR of the same Hamiltonian
+(`ipi_doublewell.json`, checked on two grids to 1e-8). Reported only, not a gate: RPMD is exact
+at t = 0 as P → ∞ and approximate for t > 0.
+
+| t (ħ/Eh) | exact Kubo | RPMD | TRPMD |
+|---|---|---|---|
+| 0 | 9.5752 | 9.5759 ± 0.0108 | 9.5636 ± 0.0100 |
+| 5 | 8.0757 | 7.9625 ± 0.0295 | 7.8983 ± 0.0281 |
+| 10 | 8.3421 | 8.3678 ± 0.0262 | 7.9673 ± 0.0296 |
+| 15 | 6.0630 | 8.3271 ± 0.0268 | 8.0794 ± 0.0291 |
+| 20 | 5.7212 | 8.3418 ± 0.0358 | 7.8484 ± 0.0397 |
+
+Both methods track the exact curve to t ≈ 10 and then miss its decay: past t ≈ 10 the exact
+C_xx keeps falling, while the RPMD curve stays near 8.3 and the TRPMD curve near 7.9–8.1. This
+is the known failure of the classical-centroid approximation for barrier tunnelling. TRPMD's
+damping of the internal modes lowers the plateau a little but does not restore the decay.
+
+### Liquid neon vs i-PI + LAMMPS, P = 16
+
+The M4 liquid (N = 108, 30 K, dt = 2 fs, LJ as in M4); cycles of 250 PILE-L steps, redraw,
+500-step segment sampled every 2 steps (τ up to 1 ps), 480 segments per method on each side
+(pimd-rs: one `pimd-rs` run continued through 120 checkpoint restarts; i-PI: 6 chains) [json].
+D from the Green–Kubo integral of C_vv at τ_max = 1 ps. Tolerance 5σ_c at every lag for C_vv
+and at τ_max for D, bias allowance 0; C_vv(0) within 5σ of 3/(βm).
+
+| Method | C_vv worst lag | D pimd-rs (Å²/ps) | D i-PI (Å²/ps) | ΔD | C_vv(0) vs 3/(βm) |
+|---|---|---|---|---|---|
+| TRPMD | 2.41σ_c (lag 250) | 0.1652 ± 0.0020 | 0.1670 ± 0.0019 | −0.66σ_c | −0.05σ |
+| RPMD | 0.95σ_c (lag 250) | 0.1627 ± 0.0021 | 0.1629 ± 0.0020 | −0.05σ_c | −1.89σ |
+
+In atomic units D = 1.4273e-5, 1.4428e-5 (TRPMD) and 1.4057e-5, 1.4070e-5 (RPMD) bohr²/(ħ/Eh),
+converted with `units` constants. RPMD C_vv(0) lies 1.89σ below 3/(βm) here and 1.5σ below in
+i-PI. Because C_seg(0) averages over every sample of the segment, it carries the NVE time-step
+bias of the centroid kinetic energy, and that bias is the same in both codes.
+
+Run times: pimd-rs 545 s for both methods (4 threads); i-PI references in the gate: neon 1 481 s,
+double well 2 012 s.
 
 ## Performance
 

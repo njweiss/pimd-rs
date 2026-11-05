@@ -329,7 +329,7 @@ para-H₂ (optional experiment after M7); periodic MACE (M8).
 - [x] Owner approves this brief, the SPEC additions (T-4, Y-1 … Y-5) and the public API
 - [x] TRPMD λ = 1/2 checked against Rossi et al. (2014) full text (Eqs. 28, 30); citation fixed
 - [x] M7a: all tests pass; `check.sh` exits 0, including thread-count runs
-- [ ] M7a: long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); agreement levels and the DVR
+- [x] M7a: long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); agreement levels and the DVR
       comparison added to `validation/RESULTS.md`
 - [x] M7a: review done; no blocking findings; `QUESTIONS.md` has no open entries
 - [ ] M7b briefed and approved (after M7a merges)
