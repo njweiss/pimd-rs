@@ -8,7 +8,7 @@ Each crates/*/tests/data/gen_*.py is run with `--out <tmpdir>`. Every JSON file 
 next to the generator and match it: same keys and list lengths, numbers within rtol 1e-9 / atol 1e-12,
 other values exactly. The top-level "versions" block is reported, not compared. Generators in SLOW
 (the i-PI runs: neon about 34 min, water on GFN2-xTB about 1 h, the M7 double well about 30 min and
-neon dynamics about 35 min) are skipped unless CHECK_IPI=1.
+neon dynamics about 35 min, the M7b PA-CMD double well about 34 min and neon about 13 min) are skipped unless CHECK_IPI=1.
 Generators of crates/pimd-torch (MACE, PyTorch) run with the pixi `ml` interpreter
 (`pixi run -e ml python`, MILESTONE_6) instead of the interpreter running this script.
 """
@@ -27,6 +27,8 @@ SLOW = {
     "gen_ipi_water_xtb.py",
     "gen_ipi_doublewell.py",
     "gen_ipi_neon_dynamics.py",
+    "gen_ipi_doublewell_cmd.py",
+    "gen_ipi_neon_cmd.py",
 }
 ML_CRATES = {"pimd-torch"}
 

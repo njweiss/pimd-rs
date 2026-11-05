@@ -258,6 +258,7 @@ fn segment_thermostat(dy: &DynamicsConfig) -> Thermostat {
     match dy.method {
         DynamicsMethod::Rpmd => Thermostat::Off,
         DynamicsMethod::Trpmd { lambda } => Thermostat::Trpmd { lambda },
+        DynamicsMethod::PaCmd { .. } => unimplemented!("M7b: pa-cmd segments"),
     }
 }
 

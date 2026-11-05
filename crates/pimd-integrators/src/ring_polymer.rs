@@ -47,6 +47,10 @@ pub struct RingPolymerIntegrator {
     /// c_k = exp(−γ_k dt) per mode, aligned with the `modes` columns (T-1, T-2);
     /// `None` for `Thermostat::Off`, whose O step is the identity and draws nothing (T-3).
     c_k: Option<Vec<f64>>,
+    /// Adiabatic frequency Ω (Eh/ħ) of PA-CMD (Y-6), or `None` for physical masses.
+    omega: Option<f64>,
+    /// Y-6 mass factors s_k, length P, in `NormalModes` column order; all 1.0 without Ω.
+    mass_factors: Vec<f64>,
 }
 
 /// Returns `v` if it is positive and finite, else `IntegratorError::InvalidValue` named `what`.
@@ -93,9 +97,29 @@ impl RingPolymerIntegrator {
         Ok(RingPolymerIntegrator {
             dt,
             beta,
+            mass_factors: vec![1.0; modes.n_beads()],
             modes,
             c_k,
+            omega: None,
         })
+    }
+
+    /// PA-CMD dynamical masses (Y-6) with adiabatic frequency `omega` (Eh/ħ); recomputes c_k with
+    /// the dynamical frequencies. Errors: `IntegratorError::InvalidValue` unless omega is
+    /// positive and finite.
+    pub fn with_adiabatic_frequency(self, omega: f64) -> Result<Self, IntegratorError> {
+        let _ = omega;
+        unimplemented!("M7b: Y-6 dynamical masses")
+    }
+
+    /// Ω, or `None` (physical masses).
+    pub fn adiabatic_frequency(&self) -> Option<f64> {
+        self.omega
+    }
+
+    /// s_k (Y-6), length P, in `NormalModes` column order; all 1.0 without Ω.
+    pub fn mass_factors(&self) -> &[f64] {
+        &self.mass_factors
     }
 
     /// Exact free ring-polymer propagation of `state` for time `t` (ħ/Eh, any sign), per normal
@@ -405,6 +429,11 @@ impl RingPolymerSim {
                 p.set(j, i, v);
             }
         }
+    }
+
+    /// The integrator (for Ω, the mass factors and the modes).
+    pub fn integrator(&self) -> &RingPolymerIntegrator {
+        &self.integrator
     }
 
     /// The current state (bead representation).

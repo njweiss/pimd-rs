@@ -231,6 +231,7 @@ pub fn reference_dynamics(cfg: &Config) -> RefDyn {
     let dynamics = match dy.method {
         DynamicsMethod::Rpmd => Thermostat::Off,
         DynamicsMethod::Trpmd { lambda } => Thermostat::Trpmd { lambda },
+        DynamicsMethod::PaCmd { .. } => unreachable!("PA-CMD is tested in pacmd_run.rs"),
     };
     let ig = RingPolymerIntegrator::new(s.dt, s.beta, s.n_beads, sampling).unwrap();
     let pot = LennardJones::new(lj_params(cfg)).unwrap();

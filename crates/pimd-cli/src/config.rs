@@ -38,6 +38,14 @@ pub enum DynamicsMethod {
         /// `trpmd_lambda`, > 0 (default 0.5).
         lambda: f64,
     },
+    /// `method = "pa-cmd"` (M7b; Y-6, Y-7): dynamical masses with adiabatic frequency `omega`
+    /// for the whole run, `Thermostat::Trpmd { lambda }` during segments.
+    PaCmd {
+        /// Ω from `cmd_omega_cm` (cm⁻¹ / `units::HARTREE_IN_WAVENUMBERS`), Eh/ħ, > 0.
+        omega: f64,
+        /// `cmd_lambda`, > 0 (required).
+        lambda: f64,
+    },
 }
 
 /// `[dynamics]` (MILESTONE_7 "Config format"): the segment cycle of Y-1 and the correlation
@@ -267,6 +275,7 @@ impl Config {
                     u(1);
                     u(lambda.to_bits());
                 }
+                DynamicsMethod::PaCmd { .. } => unimplemented!("M7b: pa-cmd config hash"),
             }
             u(dy.decorrelation_steps as u64);
             u(dy.segment_steps as u64);
@@ -303,6 +312,8 @@ struct RawConfig {
 enum RawMethod {
     Rpmd,
     Trpmd,
+    #[serde(rename = "pa-cmd")]
+    PaCmd,
 }
 
 #[derive(Deserialize)]
@@ -310,6 +321,8 @@ enum RawMethod {
 struct RawDynamics {
     method: RawMethod,
     trpmd_lambda: Option<f64>,
+    cmd_omega_cm: Option<f64>,
+    cmd_lambda: Option<f64>,
     decorrelation_steps: usize,
     segment_steps: usize,
     corr_stride: usize,
@@ -326,7 +339,30 @@ impl RawDynamics {
         n_steps: usize,
         checkpoint_every: usize,
     ) -> Result<DynamicsConfig, CliError> {
+        let cmd_keys = [
+            ("cmd_omega_cm", self.cmd_omega_cm.is_some()),
+            ("cmd_lambda", self.cmd_lambda.is_some()),
+        ];
+        if let RawMethod::PaCmd = self.method {
+            if self.trpmd_lambda.is_some() {
+                return Err(CliError::Parse(
+                    "dynamics: `trpmd_lambda` does not belong to method = \"pa-cmd\"".to_string(),
+                ));
+            }
+            if let Some((key, _)) = cmd_keys.iter().find(|(_, present)| !present) {
+                return Err(CliError::Parse(format!(
+                    "dynamics: method = \"pa-cmd\" requires `{key}`"
+                )));
+            }
+            unimplemented!("M7b: method = \"pa-cmd\"");
+        }
+        if let Some((key, _)) = cmd_keys.iter().find(|(_, present)| *present) {
+            return Err(CliError::Parse(format!(
+                "dynamics: `{key}` belongs only to method = \"pa-cmd\""
+            )));
+        }
         let method = match (self.method, self.trpmd_lambda) {
+            (RawMethod::PaCmd, _) => unreachable!("handled above"),
             (RawMethod::Rpmd, None) => DynamicsMethod::Rpmd,
             (RawMethod::Rpmd, Some(_)) => {
                 return Err(CliError::Parse(
