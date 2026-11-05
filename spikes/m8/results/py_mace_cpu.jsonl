@@ -1,0 +1,2 @@
+{"model": "ff_models/mace_off23/MACE-OFF23_small.model", "box": "spikes/m8/out/boxes/water_w64.xyz", "device": "cpu", "dtype": "float64", "threads": 1, "n_atoms": 192, "ms_median": 920.572753995657, "e_ev": -133216.24044925795}
+{"model": "ff_models/mace_off23/MACE-OFF23_small.model", "box": "spikes/m8/out/boxes/water_w64.xyz", "device": "cpu", "dtype": "float64", "threads": 4, "n_atoms": 192, "ms_median": 527.8869105386548, "e_ev": -133216.24044925795}

@@ -1,0 +1,18 @@
+[package]
+name = "m8-bench"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Standalone root: the spike is not a member of the pimd-rs workspace (MILESTONE_8 "M8 spike").
+# It uses the merged engine crates by path, unchanged.
+[workspace]
+
+[dependencies]
+pimd-core = { path = "../../../crates/pimd-core" }
+pimd-potentials = { path = "../../../crates/pimd-potentials" }
+pimd-torch = { path = "../../../crates/pimd-torch", features = ["torch"] }
+rayon = "1"
+
+[profile.release]
+debug = false
