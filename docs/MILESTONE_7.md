@@ -359,7 +359,11 @@ above, and the zero clamp of a rounding-negative variance documented on `sem`.
   masses, and a public way to pass them (`RingPolymerIntegrator` option or a new constructor).
 - Thermostat during segments: PILE-L on internal modes at γ = 2λΩ, centroid NVE (as i-PI's
   `pa-cmd` with `pile_lambda`); momentum redraw from the scaled-mass distribution.
-- Config: `method = "pa-cmd"`, `cmd_omega_cm` (required), `cmd_lambda`.
+- Config: `method = "pa-cmd"`, `cmd_omega_cm` (required), `cmd_lambda`. Ω stays a required,
+  tunable parameter (owner, 2026-11-04): Ω = P^{P/(P−1)}/β is a useful heuristic once the path
+  integral is converged in P, documented as a suggested starting value, not a default. The
+  brief should state the constraints it must meet (adiabatic separation: Ω well above the
+  physical frequencies of interest; dt resolving Ω) and suggest checking results at two Ω.
 - Time step: dt must resolve Ω; the brief states the bound and a test that the segment energy
   error grows as Ω·dt rises.
 - Validation: harmonic exact (centroid decouples, as in M7a); double well and neon vs i-PI
