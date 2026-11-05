@@ -1,6 +1,6 @@
 //! The run driver: initial state, equilibration, production with recording, checkpoint/restart
-//! (MILESTONE_4; I-1, T-1, E-1 … E-4, E-7, D-2, D-3), and the RPMD/TRPMD segment cycle of a
-//! `[dynamics]` run (MILESTONE_7; Y-1 … Y-5, T-4).
+//! (MILESTONE_4; I-1, T-1, E-1 … E-4, E-7, D-2, D-3), and the RPMD/TRPMD/PA-CMD segment cycle
+//! of a `[dynamics]` run (MILESTONE_7; Y-1 … Y-7, T-4).
 
 use std::fs;
 use std::io::{BufWriter, Write};
@@ -8,12 +8,13 @@ use std::path::Path;
 use std::time::Duration;
 
 use pimd_core::units::{
-    BOHR_IN_ANGSTROM, FS_IN_ATOMIC_TIME, HARTREE_IN_EV, K_B_HARTREE_PER_KELVIN,
+    BOHR_IN_ANGSTROM, FS_IN_ATOMIC_TIME, HARTREE_IN_EV, HARTREE_IN_WAVENUMBERS,
+    K_B_HARTREE_PER_KELVIN,
 };
 use pimd_core::{Beads, Rng, RngState};
 use pimd_estimators::{
-    CentroidCorrelation, Rdf, centroid_velocity, green_kubo, hamiltonian, potential_mean,
-    total_primitive, total_virial,
+    CentroidCorrelation, Rdf, centroid_velocity, green_kubo, hamiltonian, hamiltonian_dynamical,
+    potential_mean, total_primitive, total_virial,
 };
 use pimd_integrators::{RingPolymerIntegrator, RingPolymerSim, RingState, Thermostat};
 use pimd_potentials::{LennardJones, Potential};
@@ -64,7 +65,9 @@ pub struct Correlations {
 ///
 /// With `[dynamics]`, production is the segment cycle of Y-1 (decorrelation steps with PILE-L,
 /// the Y-2 redraw, a segment with `Off` or `Trpmd`), and the run also writes `segments.csv` (one
-/// row per segment) and `correlations.csv` (at the end), MILESTONE_7 "Outputs".
+/// row per segment) and `correlations.csv` (at the end), MILESTONE_7 "Outputs". With
+/// `method = "pa-cmd"` the Y-6 masses apply to the whole run (Y-7) and the initial momenta are
+/// the amended Y-2 draw (M7b "Clarifications", Q32).
 ///
 /// The summary means are NaN when no production step was recorded (`n_steps < stride`).
 ///
@@ -77,12 +80,17 @@ pub fn run(config: &Config, out_dir: &Path) -> Result<RunSummary, CliError> {
         (Some(r), Some(cell)) => Some(Rdf::new(r.n_bins, r.r_max, cell, config.system.n_atoms)?),
         _ => None,
     };
-    let sim = RingPolymerSim::new(
+    let mut sim = RingPolymerSim::new(
         state,
         config.system.cell,
         integrator(config)?,
         potential(config)?,
     )?;
+    if sim.integrator().adiabatic_frequency().is_some() {
+        // Q32: the amended Y-2 draw of the same P·N·3 normals that `initial_state` drew (a fresh
+        // RNG from the seed repeats them; `rng` has already advanced past them).
+        sim.resample_momenta(&mut Rng::from_seed(s.seed));
+    }
     let dynamics = config
         .dynamics
         .as_ref()
@@ -253,25 +261,39 @@ fn sampling_thermostat(config: &Config) -> Thermostat {
     }
 }
 
-/// The segment thermostat of `[dynamics]` (Y-1): `Off` for RPMD, `Trpmd` for TRPMD (T-4).
+/// The segment thermostat of `[dynamics]` (Y-1): `Off` for RPMD, `Trpmd` for TRPMD (T-4) and
+/// PA-CMD (Y-7).
 fn segment_thermostat(dy: &DynamicsConfig) -> Thermostat {
     match dy.method {
         DynamicsMethod::Rpmd => Thermostat::Off,
-        DynamicsMethod::Trpmd { lambda } => Thermostat::Trpmd { lambda },
-        DynamicsMethod::PaCmd { .. } => unimplemented!("M7b: pa-cmd segments"),
+        DynamicsMethod::Trpmd { lambda } | DynamicsMethod::PaCmd { lambda, .. } => {
+            Thermostat::Trpmd { lambda }
+        }
     }
 }
 
-/// BAOAB + PILE-L(τ_0) with the configured transform.
+/// Ω (Eh/ħ) of a `method = "pa-cmd"` run, else `None`.
+fn adiabatic_frequency(config: &Config) -> Option<f64> {
+    match config.dynamics.as_ref()?.method {
+        DynamicsMethod::PaCmd { omega, .. } => Some(omega),
+        _ => None,
+    }
+}
+
+/// BAOAB + PILE-L(τ_0) with the configured transform, and the Y-6 masses for PA-CMD (Y-7).
 fn integrator(config: &Config) -> Result<RingPolymerIntegrator, CliError> {
     let s = &config.sampling;
-    Ok(RingPolymerIntegrator::with_transform(
+    let ig = RingPolymerIntegrator::with_transform(
         s.dt,
         s.beta,
         s.n_beads,
         sampling_thermostat(config),
         s.normal_modes,
-    )?)
+    )?;
+    Ok(match adiabatic_frequency(config) {
+        Some(omega) => ig.with_adiabatic_frequency(omega)?,
+        None => ig,
+    })
 }
 
 /// The configured potential: LJ in-process, the socket server once its clients have connected
@@ -324,10 +346,10 @@ fn potential(config: &Config) -> Result<Box<dyn Potential>, CliError> {
     })
 }
 
-/// `run.log`: version, seed, start point, config hash and the parsed config. Nothing
-/// machine- or time-dependent.
+/// `run.log`: version, seed, start point, config hash, Ω and λ for PA-CMD (M7b
+/// "Clarifications") and the parsed config. Nothing machine- or time-dependent.
 fn write_log(config: &Config, out_dir: &Path, start: &str) -> Result<(), CliError> {
-    let log = format!(
+    let mut log = format!(
         concat!(
             "pimd-rs {}\nseed = {}\nstart = {start}\n",
             "config hash = {:#018x}\nconfig (atomic units) = {config:#?}\n",
@@ -338,6 +360,14 @@ fn write_log(config: &Config, out_dir: &Path, start: &str) -> Result<(), CliErro
         start = start,
         config = config,
     );
+    if let Some(DynamicsMethod::PaCmd { omega, lambda }) =
+        config.dynamics.as_ref().map(|d| &d.method)
+    {
+        log.push_str(&format!(
+            "pa-cmd: Omega = {} cm^-1 = {omega} Eh/hbar, cmd_lambda = {lambda}\n",
+            omega * HARTREE_IN_WAVENUMBERS
+        ));
+    }
     fs::write(out_dir.join("run.log"), log)?;
     Ok(())
 }
@@ -440,8 +470,7 @@ impl Driver {
         }
         if pos == dy.decorrelation_steps {
             self.sim.resample_momenta(&mut self.rng);
-            let n = config.system.n_atoms as f64;
-            let h = hamiltonian(self.sim.state(), config.sampling.beta, self.sim.energies()) / n;
+            let h = self.h_per_atom(config);
             self.sim.set_thermostat(segment_thermostat(dy))?;
             self.sample()?;
             if let Some(ds) = self.dynamics.as_mut() {
@@ -470,9 +499,7 @@ impl Driver {
             self.sample()?;
         }
         if pos == cycle {
-            let n = config.system.n_atoms as f64;
-            let h_end =
-                hamiltonian(self.sim.state(), config.sampling.beta, self.sim.energies()) / n;
+            let h_end = self.h_per_atom(config);
             if let Some(ds) = self.dynamics.as_mut() {
                 ds.c_vv.end_segment()?;
                 ds.c_xx.end_segment()?;
@@ -487,6 +514,18 @@ impl Driver {
             }
         }
         Ok(())
+    }
+
+    /// H_P/N for `segments.csv`: `hamiltonian_dynamical` (Y-6) under PA-CMD, else `hamiltonian`.
+    fn h_per_atom(&self, config: &Config) -> f64 {
+        let n = config.system.n_atoms as f64;
+        let (ig, beta) = (self.sim.integrator(), config.sampling.beta);
+        let (st, e) = (self.sim.state(), self.sim.energies());
+        if ig.adiabatic_frequency().is_some() {
+            hamiltonian_dynamical(st, beta, e, ig.modes(), ig.mass_factors()) / n
+        } else {
+            hamiltonian(st, beta, e) / n
+        }
     }
 
     /// One centroid sample (Y-3): v̄ into C_vv, the stored q̄ into C_xx.

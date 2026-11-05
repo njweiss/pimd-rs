@@ -3,8 +3,8 @@
 //! (U-3).
 
 use pimd_core::units::{
-    AMU_IN_ELECTRON_MASSES, BOHR_IN_ANGSTROM, FS_IN_ATOMIC_TIME, K_B_HARTREE_PER_KELVIN,
-    beta_from_kelvin,
+    AMU_IN_ELECTRON_MASSES, BOHR_IN_ANGSTROM, FS_IN_ATOMIC_TIME, HARTREE_IN_WAVENUMBERS,
+    K_B_HARTREE_PER_KELVIN, beta_from_kelvin,
 };
 use pimd_core::{Cell, Transform};
 use pimd_potentials::LjParams;
@@ -275,7 +275,12 @@ impl Config {
                     u(1);
                     u(lambda.to_bits());
                 }
-                DynamicsMethod::PaCmd { .. } => unimplemented!("M7b: pa-cmd config hash"),
+                // M7b: method tag, Ω and λ.
+                DynamicsMethod::PaCmd { omega, lambda } => {
+                    u(2);
+                    u(omega.to_bits());
+                    u(lambda.to_bits());
+                }
             }
             u(dy.decorrelation_steps as u64);
             u(dy.segment_steps as u64);
@@ -354,15 +359,22 @@ impl RawDynamics {
                     "dynamics: method = \"pa-cmd\" requires `{key}`"
                 )));
             }
-            unimplemented!("M7b: method = \"pa-cmd\"");
-        }
-        if let Some((key, _)) = cmd_keys.iter().find(|(_, present)| *present) {
+        } else if let Some((key, _)) = cmd_keys.iter().find(|(_, present)| *present) {
             return Err(CliError::Parse(format!(
                 "dynamics: `{key}` belongs only to method = \"pa-cmd\""
             )));
         }
         let method = match (self.method, self.trpmd_lambda) {
-            (RawMethod::PaCmd, _) => unreachable!("handled above"),
+            (RawMethod::PaCmd, _) => {
+                let (Some(omega_cm), Some(lambda)) = (self.cmd_omega_cm, self.cmd_lambda) else {
+                    unreachable!("checked above")
+                };
+                // Y-6, decision 5: Ω in cm⁻¹ as an angular frequency (ħ = 1), no 2π.
+                DynamicsMethod::PaCmd {
+                    omega: positive("dynamics.cmd_omega_cm", omega_cm)? / HARTREE_IN_WAVENUMBERS,
+                    lambda: positive("dynamics.cmd_lambda", lambda)?,
+                }
+            }
             (RawMethod::Rpmd, None) => DynamicsMethod::Rpmd,
             (RawMethod::Rpmd, Some(_)) => {
                 return Err(CliError::Parse(

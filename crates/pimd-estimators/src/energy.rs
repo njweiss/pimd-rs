@@ -102,8 +102,25 @@ pub fn hamiltonian_dynamical(
     modes: &NormalModes,
     mass_factors: &[f64],
 ) -> f64 {
-    let _ = (state, beta, energies, modes, mass_factors);
-    unimplemented!("M7b: Y-6 dynamical Hamiltonian")
+    let (q, p) = (&state.q, &state.p);
+    assert_same_shape(q, p, "p");
+    assert_energies(q, energies);
+    assert_eq!(
+        mass_factors.len(),
+        q.n_beads(),
+        "{} mass factors for {} beads",
+        mass_factors.len(),
+        q.n_beads()
+    );
+    let spring = spring_energy(q, &state.masses, beta);
+    let pt = modes.to_normal(p);
+    let mut kinetic = 0.0;
+    for (k, &s) in mass_factors.iter().enumerate() {
+        for (i, &m) in state.masses.iter().enumerate() {
+            kinetic += pt.get(k, i).iter().map(|x| x * x).sum::<f64>() / (2.0 * m * s);
+        }
+    }
+    kinetic + spring + energies.iter().sum::<f64>()
 }
 
 pub(crate) fn assert_masses(q: &Beads, masses: &[f64]) {
