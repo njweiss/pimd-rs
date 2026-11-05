@@ -40,8 +40,14 @@ pub enum DynamicsMethod {
     },
     /// `method = "pa-cmd"` (M7b; Y-6, Y-7): dynamical masses with adiabatic frequency `omega`
     /// for the whole run, `Thermostat::Trpmd { lambda }` during segments.
+    ///
+    /// Choosing Ω and λ (MILESTONE_7, M7b decisions 4 and 5): Ω = P^{P/(P−1)}/β (ħ = 1) is a
+    /// suggested starting value once the path integral is converged in P. Ω must sit well above
+    /// the physical frequencies of interest and Ω·dt well below π (every internal mode is at Ω);
+    /// check results at two Ω. λ has no consensus value: Rossi et al. (2014)'s 1/2 is for TRPMD;
+    /// Castro, Trenins, Kapil, Rossi (arXiv:2508.16246) use 0.001–0.01.
     PaCmd {
-        /// Ω from `cmd_omega_cm` (cm⁻¹ / `units::HARTREE_IN_WAVENUMBERS`), Eh/ħ, > 0.
+        /// Ω from `cmd_omega_cm` (cm⁻¹ / `units::HARTREE_IN_WAVENUMBERS`), Eh/ħ, > 0 (required).
         omega: f64,
         /// `cmd_lambda`, > 0 (required).
         lambda: f64,
@@ -171,7 +177,9 @@ impl Config {
     /// including `n_beads = 0` and `cutoff + skin > L_min/2` (C-4); `CliError::Io` (naming
     /// `potential.model` and the path) for a model file that cannot be read (kind = "mace": the
     /// file is read and hashed at parse time, Q24). With `[dynamics]` (MILESTONE_7, Q29): a
-    /// `trpmd_lambda` with method = "rpmd", an unknown method or key are `Parse` naming the key;
+    /// `trpmd_lambda` with method = "rpmd" or "pa-cmd", a `cmd_omega_cm` or `cmd_lambda` with
+    /// another method, a missing one with method = "pa-cmd", an unknown method or key are `Parse`
+    /// naming the key;
     /// range rules are `InvalidValue` naming `dynamics.<key>` (a segment_steps that is not a
     /// multiple of corr_stride names `dynamics.segment_steps`); `n_steps` and `checkpoint_every`
     /// not multiples of the cycle name `sampling.n_steps` and `output.checkpoint_every`.
@@ -370,8 +378,13 @@ impl RawDynamics {
                     unreachable!("checked above")
                 };
                 // Y-6, decision 5: Ω in cm⁻¹ as an angular frequency (ħ = 1), no 2π.
+                let omega = positive("dynamics.cmd_omega_cm", omega_cm)? / HARTREE_IN_WAVENUMBERS;
+                // A subnormal cm⁻¹ value can convert to 0.
+                if !(omega.is_finite() && omega > 0.0) {
+                    return Err(invalid("dynamics.cmd_omega_cm", omega_cm));
+                }
                 DynamicsMethod::PaCmd {
-                    omega: positive("dynamics.cmd_omega_cm", omega_cm)? / HARTREE_IN_WAVENUMBERS,
+                    omega,
                     lambda: positive("dynamics.cmd_lambda", lambda)?,
                 }
             }

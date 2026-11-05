@@ -93,6 +93,13 @@ thermostatted sampling, a momentum redraw and a dynamics segment, and adds `corr
 (C_vv, C_xx, D(τ) with error bars) and `segments.csv` (H_P at each segment's start and end); see
 [`docs/MILESTONE_7.md`](docs/MILESTONE_7.md).
 
+`method = "pa-cmd"` (partially adiabatic centroid MD) requires `cmd_omega_cm` (the adiabatic
+frequency Ω, cm⁻¹) and `cmd_lambda`. A suggested starting Ω, once the run is converged in P, is
+P^{P/(P−1)}/β (ħ = 1); Ω should sit well above the physical frequencies of interest, Ω·dt well
+below π, and results should be checked at two Ω. λ has no consensus value: Rossi et al. (2014)'s
+1/2 is for TRPMD, while Castro, Trenins, Kapil and Rossi (arXiv:2508.16246) use 0.001–0.01. See
+the M7b brief in [`docs/MILESTONE_7.md`](docs/MILESTONE_7.md).
+
 ## Validation
 
 [`validation/RESULTS.md`](validation/RESULTS.md) lists every reference comparison with its

@@ -28,8 +28,9 @@ pub enum Thermostat {
         /// Centroid time constant τ_0 in ħ/Eh, or `None` for γ_0 = 0.
         tau0: Option<f64>,
     },
-    /// Thermostatted RPMD (T-4): γ_0 = 0 and γ_k = 2·`lambda`·ω_k for every mode with ω_k > 0;
-    /// draw order and count as T-1. `lambda` > 0 and finite.
+    /// Thermostatted RPMD (T-4): γ_0 = 0 and γ_k = 2·`lambda`·ω_k for every mode with ω_k > 0
+    /// (with an adiabatic frequency set, ω_k → Ω_k and m → m·s_k, Y-6); draw order and count as
+    /// T-1. `lambda` > 0 and finite.
     Trpmd {
         /// Scaling λ of the critical damping 2ω_k of the internal modes (dimensionless).
         lambda: f64,
@@ -113,7 +114,7 @@ impl RingPolymerIntegrator {
 
     /// PA-CMD dynamical masses (Y-6) with adiabatic frequency `omega` (Eh/ħ); recomputes c_k with
     /// the dynamical frequencies. Errors: `IntegratorError::InvalidValue` unless omega is
-    /// positive and finite.
+    /// positive and finite and every s_k is finite (Ω so small that (ω_k/Ω)² overflows).
     pub fn with_adiabatic_frequency(mut self, omega: f64) -> Result<Self, IntegratorError> {
         positive_finite("adiabatic frequency (Eh/hbar)", omega)?;
         let w = self.modes.frequencies();
@@ -121,6 +122,12 @@ impl RingPolymerIntegrator {
             .iter()
             .map(|&w| if w > 0.0 { (w / omega).powi(2) } else { 1.0 })
             .collect();
+        if !self.mass_factors.iter().all(|s| s.is_finite()) {
+            return Err(IntegratorError::InvalidValue {
+                what: "adiabatic frequency (Eh/hbar)",
+                value: omega,
+            });
+        }
         self.dyn_freqs = w
             .iter()
             .map(|&w| if w > 0.0 { omega } else { 0.0 })
@@ -143,7 +150,8 @@ impl RingPolymerIntegrator {
     }
 
     /// Exact free ring-polymer propagation of `state` for time `t` (ħ/Eh, any sign), per normal
-    /// mode and component (I-2), using `state.masses`. No potential forces.
+    /// mode and component (I-2), using `state.masses` (with an adiabatic frequency set, ω_k → Ω_k
+    /// and m → m·s_k, Y-6). No potential forces.
     ///
     /// `state.masses` must be positive and finite (S-2); this is not checked here
     /// (`RingPolymerSim::new` checks it).
@@ -251,7 +259,8 @@ impl RingPolymerIntegrator {
 }
 
 /// Friction rule (γ_0, scale of ω_k for k ≥ 1) of `thermostat`, or `None` for `Off`:
-/// T-2 for PILE-L (γ_0 = 1/τ_0 or 0, γ_k = 2ω_k), T-4 for TRPMD (γ_0 = 0, γ_k = 2λω_k).
+/// T-2 for PILE-L (γ_0 = 1/τ_0 or 0, γ_k = 2ω_k), T-4 for TRPMD (γ_0 = 0, γ_k = 2λω_k). With an
+/// adiabatic frequency set, ω_k → Ω_k (and m → m·s_k in the noise), Y-6.
 ///
 /// Errors: `IntegratorError::InvalidValue` for τ_0 or λ not positive and finite.
 fn friction(thermostat: Thermostat) -> Result<Option<(f64, f64)>, IntegratorError> {
@@ -456,10 +465,11 @@ impl RingPolymerSim {
                 p.set(j, i, v);
             }
         }
-        if self.integrator.omega.is_some() {
+        let n3 = self.state.masses.len() * 3;
+        // N = 0: nothing to scale (and `chunks_exact_mut(0)` would panic).
+        if self.integrator.omega.is_some() && n3 > 0 {
             let modes = &self.integrator.modes;
             let mut pt = modes.to_normal(p);
-            let n3 = self.state.masses.len() * 3;
             for (mode, &sk) in pt
                 .as_mut_slice()
                 .chunks_exact_mut(n3)
