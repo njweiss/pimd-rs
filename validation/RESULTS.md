@@ -307,6 +307,79 @@ bias of the centroid kinetic energy, and that bias is the same in both codes.
 Run times: pimd-rs 545 s for both methods (4 threads); i-PI references in the gate: neon 1 481 s,
 double well 2 012 s.
 
+## M7b Dynamics: PA-CMD
+
+Numbers printed by `cargo test --release --features long-validation -p pimd-estimators --test
+long_pacmd_harmonic --test long_pacmd_doublewell -- --nocapture` and `cargo test --release
+--features long-validation -p pimd-cli --test long_neon_pacmd -- --nocapture` on branch
+`milestone-7b` (commit f61735e), after `CHECK_LONG=1 CHECK_IPI=1 ./scripts/check.sh` had passed
+on the same commit (1 028 tests, 0 failed; all 11 reference generators, including the two new
+i-PI pa-cmd ones, reproduced the committed files) [run]. Protocol (SPEC Y-6, Y-7): the M7a cycle
+with dynamical masses m·s_k, s_k = (ω_k/Ω)², for the whole run; PILE-L decorrelation (internal
+γ = 2Ω), the amended redraw (mode k scaled by √s_k), then a segment with centroid NVE and
+internal-mode friction γ = 2λΩ. Tolerances and their derivation: the doc comments of
+`crates/pimd-estimators/tests/long_pacmd_*.rs` and `crates/pimd-cli/tests/long_neon_pacmd.rs`
+[comment].
+
+### Harmonic oscillator vs the exact finite-dt result
+
+As M7a (βω = 8, P = 8, ω dt = 0.1), with Ω = 4 and λ = 1. The centroid still decouples, so the
+same exact C_xx and C_vv apply (5σ at every lag, no allowance).
+
+| Quantity | worst lag | lag 0 (exact 0.375) |
+|---|---|---|
+| C_xx | 1.01σ | 0.3726 ± 0.0024 |
+| C_vv | 1.40σ | 0.3716 ± 0.0024 |
+
+Segment energy error mean |ΔH̃_P| grows with Ω, as the internal modes become stiffer (each step
+required > 5σ):
+
+| Ω (Ω·dt) | mean \|ΔH̃_P\| (Eh) | increase |
+|---|---|---|
+| 2 (0.2) | 1.4181e-2 ± 2.5e-4 | |
+| 4 (0.4) | 9.9975e-2 ± 1.9e-3 | 44.7σ_c |
+| 8 (0.8) | 5.8838e-1 ± 1.1e-2 | 43.6σ_c |
+
+### Double well vs i-PI, at two Ω
+
+The M7a double well and protocol, λ = 1, at Ω_h = P^{P/(P−1)}/β = 12.8323 Eh/ħ and 2Ω_h; i-PI
+3.3.1 `pa-cmd`, 1 600 segments per Ω [json]. Tolerance 5σ_c at every lag, bias allowance 0.
+
+| Ω | C_xx worst lag | C_vv worst lag | C_xx(0) pimd-rs | C_xx(0) i-PI | C_vv(0) pimd-rs | C_vv(0) i-PI |
+|---|---|---|---|---|---|---|
+| Ω_h | 1.51σ_c | 2.25σ_c | 9.5893 ± 0.0100 | 9.5651 ± 0.0197 | 2.0067 ± 0.0154 | 2.0578 ± 0.0310 |
+| 2Ω_h | 2.25σ_c | 2.28σ_c | 9.5644 ± 0.0104 | 9.5243 ± 0.0200 | 2.0019 ± 0.0149 | 2.0810 ± 0.0314 |
+
+Against the exact Kubo C_xx(t) (reported only, as in M7a):
+
+| t (ħ/Eh) | exact Kubo | PA-CMD Ω_h | PA-CMD 2Ω_h | Ω_h − 2Ω_h |
+|---|---|---|---|---|
+| 0 | 9.5752 | 9.5893 ± 0.0100 | 9.5644 ± 0.0104 | 1.7σ_c |
+| 5 | 8.0757 | 7.9500 ± 0.0293 | 7.9358 ± 0.0297 | 0.3σ_c |
+| 10 | 8.3421 | 8.1373 ± 0.0290 | 8.1872 ± 0.0276 | −1.2σ_c |
+| 15 | 6.0630 | 8.2615 ± 0.0281 | 8.2817 ± 0.0276 | −0.5σ_c |
+| 20 | 5.7212 | 8.0986 ± 0.0394 | 8.1173 ± 0.0374 | −0.3σ_c |
+
+The two Ω agree within 2σ_c at every printed time, so Ω_h is adiabatic enough here. Like RPMD and
+TRPMD, PA-CMD misses the tunnelling decay past t ≈ 10: its plateau near 8.1–8.3 lies between the
+RPMD (≈ 8.3) and TRPMD (≈ 7.9–8.1) curves of M7a.
+
+### Liquid neon vs i-PI + LAMMPS, P = 16
+
+The M7a neon protocol with Ω = Ω_h = 401.349 cm⁻¹ and λ = 1; 480 segments on each side [json].
+
+| C_vv worst lag | D pimd-rs (Å²/ps) | D i-PI (Å²/ps) | ΔD | C_vv(0) vs 3/(βm) |
+|---|---|---|---|---|
+| 2.08σ_c (lag 32) | 0.1657 ± 0.0019 | 0.1679 ± 0.0021 | −0.79σ_c | −1.57σ |
+
+In atomic units D = 1.43105e-5 vs 1.44991e-5 bohr²/(ħ/Eh). The static check: ⟨E_vir⟩ over the
+PA-CMD run is −96.81 ± 0.13 K/atom against the M4 i-PI PIMD value −97.19 ± 0.18 K/atom (1.68σ_c),
+so the dynamical masses leave the sampled distribution unchanged. PA-CMD D lies within 1σ of the
+M7a TRPMD (0.1652) and RPMD (0.1627 ± 0.0021, 1.1σ) values: for this weakly quantum liquid the
+three methods agree.
+
+Run times: i-PI references in the gate: neon pa-cmd 743 s, double well pa-cmd 2 044 s.
+
 ## Performance
 
 `validation/benchmark.sh` (3 min 23 s wall), N = 108 neon at the state point above, best of 3
