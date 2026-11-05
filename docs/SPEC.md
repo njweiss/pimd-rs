@@ -125,7 +125,7 @@ Ring-polymer dynamics for Kubo-transformed time-correlation functions of the cen
 ## 11. Roadmap
 
 | Milestone | Content | Flow |
-|---|---|---|
+| --- | --- | --- |
 | M1 | Foundations: units, cell, beads, RNG, normal modes, `Potential`, `Harmonic` | A/B/C |
 | M2 | Ring-polymer sampling: free propagator, BAOAB + PILE-L, estimators, `DoubleWell` | A/B/C |
 | M3 | Classical core: LJ, neighbor lists, velocity Verlet, rayon, RDF, pressure, vs LAMMPS | A/B/C |
@@ -137,6 +137,7 @@ Ring-polymer dynamics for Kubo-transformed time-correlation functions of the cen
 | M8 | Solvated ligand: PBC with larger batches, ML/MM decision | decide at start |
 
 Notes for later milestones:
+
 - Para-H₂ with Silvera-Goldman is a stretch inside R1 or M4 follow-up, only after parameters are cross-verified from at least two independent sources.
 - MACE-OFF23 weights are not shipped; the repo only interfaces with a user-downloaded file. The owner confirmed the licence (2026-11-01): the README may cite the model while weights and exports stay out of the repository.
 - M7 validation ladder: harmonic Kubo-transformed autocorrelation (exact); P = 1 equals classical; 1D double well vs exact eigenstate correlation functions; literature para-H₂/neon diffusion and VACF.
