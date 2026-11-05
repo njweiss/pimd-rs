@@ -494,6 +494,18 @@ n_lags = 251
 - `segments.csv` H_P values use `hamiltonian_dynamical`/N under PA-CMD, `hamiltonian`/N
   otherwise.
 - `run.log` echoes Ω in cm⁻¹ and Eh/ħ, and λ.
+- Initial momenta of a `"pa-cmd"` run (Q32): the amended Y-2 draw, i.e. the M4/M5 initial draw
+  (P·N·3 normals, same order) transformed to normal modes, mode k scaled by √s_k, transformed
+  back (as i-PI with `dynm3`). Without `[dynamics]` and for rpmd/trpmd the initial draw is
+  unchanged.
+- Adding `PaCmd` allows one `unreachable!` arm in the M7a test helper `dyn_common/mod.rs`
+  (`reference_dynamics`), nothing else in a locked file (Q31, as Q28).
+- Points pinned by the tests (Q33): a missing or misplaced `cmd_*` key is `Parse` naming the key or
+  `InvalidValue("dynamics.<key>")`; the run.log echo is checked by value, no line format; P = 1
+  with Ω is bitwise equal to P = 1 without Ω; "unchanged without Ω" is pinned by FNV-1a
+  fingerprints recorded with the e6008c9 code; `with_adiabatic_frequency` works with any
+  thermostat and survives `set_thermostat`; i-PI's 8-digit cm⁻¹ factor (1e-8 relative) needs no
+  allowance; the panic messages of `hamiltonian_dynamical` are not specified.
 
 ### Required tests
 
