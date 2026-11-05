@@ -1,7 +1,7 @@
 # Milestone 7: Ring-polymer dynamics (RPMD, TRPMD; PA-CMD in M7b)
 
 Status: M7a **approved and merged (2026-11-04)** (SPEC T-4 and §8a Y-1 … Y-5 added); M7b
-**draft** at the end of this file.
+**approved (2026-11-04)**, brief at the end of this file.
 
 | Phase | Flow | Output |
 | --- | --- | --- |
@@ -332,7 +332,7 @@ para-H₂ (optional experiment after M7); periodic MACE (M8).
 - [x] M7a: long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); agreement levels and the DVR
       comparison added to `validation/RESULTS.md`
 - [x] M7a: review done; no blocking findings; `QUESTIONS.md` has no open entries
-- [ ] M7b briefed and approved (after M7a merges)
+- [x] M7b briefed and approved (after M7a merges)
 
 ## After review (M7a, 2026-11-04)
 
@@ -351,9 +351,9 @@ Phase C at 7a64ac1: no blocking or should-fix findings. Accepted behaviour beyon
 Nits fixed after review: TRPMD added to the O-step and draw-count docs (D-4), the n_atoms check
 above, and the zero clamp of a rounding-negative variance documented on `sem`.
 
-## M7b brief (PA-CMD): draft, 2026-11-04
+## M7b brief (PA-CMD)
 
-Status: **draft**, for owner approval. M7a is merged (main at e6008c9); M7b runs its own A/B/C
+Status: **approved (2026-11-04)**; Y-6, Y-7 and the Y-2 amendment added to SPEC. M7a is merged (main at e6008c9); M7b runs its own A/B/C
 with tests committed as `tests(m7b):`.
 
 Crates touched: `pimd-integrators` (dynamical masses in the integrator), `pimd-estimators`
@@ -406,7 +406,7 @@ double well (two Ω) and liquid neon.
    heuristic value); liquid neon vs i-PI `pa-cmd` at Ω_h. Not in scope: the curvature problem,
    `wmax-cmd`.
 
-### SPEC additions (proposed)
+### SPEC additions (added 2026-11-04)
 
 Section 8a, after Y-5:
 
@@ -562,7 +562,7 @@ elevated-temperature CMD variants.
 
 ### Acceptance (M7b)
 
-- [ ] Owner approves this brief, Y-6, Y-7, the Y-2 amendment and the public API
+- [x] Owner approves this brief, Y-6, Y-7, the Y-2 amendment and the public API
 - [ ] All tests pass; `check.sh` exits 0
 - [ ] Long validation passes (`CHECK_LONG=1 CHECK_IPI=1`); results in `validation/RESULTS.md`
 - [ ] Review done; no blocking findings; `QUESTIONS.md` has no open entries
