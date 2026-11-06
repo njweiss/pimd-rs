@@ -142,10 +142,11 @@ The weights are not in this repository and are under their own licence. Download
 By default the P beads are evaluated as one batched graph. On a GPU with limited memory, set
 `potential.beads_per_graph = c` to evaluate them in consecutive chunks of c beads (SPEC P-6;
 results depend on c to stated tolerances, and c < P enters the config hash). Safe sizes on an
-8 GB card (M8 spike): about 190 k edges per graph for MACE-OFF23 small in float32, 95 k for small
-in float64, 60 k for medium in float32 and 30 k for medium in float64; one bead of a 660-atom water
-box has about 25 k edges with small (so c = 8 in float32). On WSL2 an oversized graph does not fail
-but spills into shared system memory and runs several times slower; there is no free-memory check.
+8 GB card (M8 spike): about 190–200 k edges per graph for MACE-OFF23 small in float32, 95 k for
+small in float64, 60 k for medium in float32 and 30 k for medium in float64; one bead of the
+660-atom NMA + 216 water box has about 25 k edges with small (so c = 8 in float32). On WSL2 an
+oversized graph does not fail but spills into shared system memory and runs several times slower;
+there is no free-memory check.
 Setting `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` in the environment reduces
 fragmentation (the engine does not set it). Positions and symbols can also be read from an xyz file
 with `system.positions_xyz`.

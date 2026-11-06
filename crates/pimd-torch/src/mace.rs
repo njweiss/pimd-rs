@@ -67,8 +67,9 @@ pub struct MacePotential {
     threads: i32,
     /// Edge buffers, cleared and refilled by every `evaluate`.
     edges: Edges,
-    /// Input tensors that depend only on the bead count of a graph, for the (at most two) graph
-    /// sizes of the last call (a full chunk and the last, shorter one).
+    /// Input tensors that depend only on the bead count of a graph, for at most two graph sizes
+    /// (a full chunk and the last, shorter one); the oldest entry is evicted first, so after a
+    /// change of P or c it may hold a size the last call did not use (costs one rebuild only).
     constants: Vec<Constants>,
     /// Beads per graph c set by `with_beads_per_graph`; `None` = all beads in one graph (P-6).
     beads_per_graph: Option<usize>,

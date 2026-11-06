@@ -329,7 +329,8 @@ fn read_xyz(path: &str, n_atoms: usize) -> Result<(Vec<[f64; 3]>, Vec<String>), 
     const KEY: &str = "system.positions_xyz";
     let bytes = std::fs::read(path)
         .map_err(|e| std::io::Error::new(e.kind(), format!("{KEY} {path}: {e}")))?;
-    // Values reported: the 1-based line number of a malformed line, else the count.
+    // Values reported: the 1-based line number of a malformed, extra or missing line; the count
+    // when it is ≠ `n_atoms`; a non-finite coordinate itself; 0 for contents that are not UTF-8.
     let text = std::str::from_utf8(&bytes).map_err(|_| invalid(KEY, 0.0))?;
     let mut lines = text.lines();
     let count = lines
@@ -340,7 +341,11 @@ fn read_xyz(path: &str, n_atoms: usize) -> Result<(Vec<[f64; 3]>, Vec<String>), 
         return Err(invalid(KEY, 2.0));
     }
     let atoms: Vec<&str> = lines.collect();
-    if atoms.len() != count || count != n_atoms {
+    if atoms.len() != count {
+        // The first line past the stated count, or the first missing one.
+        return Err(invalid(KEY, (atoms.len().min(count) + 3) as f64));
+    }
+    if count != n_atoms {
         return Err(invalid(KEY, count as f64));
     }
     let mut positions = Vec::with_capacity(count);
