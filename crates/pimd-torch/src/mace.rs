@@ -1,5 +1,5 @@
 //! `MacePotential` (SPEC P-6): a TorchScript MACE export (`scripts/export_mace.py`) evaluated
-//! in-process, all P beads as one batched graph.
+//! in-process, the P beads in consecutive chunks of c beads, each chunk one batched graph.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
@@ -67,8 +67,9 @@ pub struct MacePotential {
     threads: i32,
     /// Edge buffers, cleared and refilled by every `evaluate`.
     edges: Edges,
-    /// Input tensors that depend only on P, for the P of the last call.
-    constants: Option<Constants>,
+    /// Input tensors that depend only on the bead count of a graph, for the (at most two) graph
+    /// sizes of the last call (a full chunk and the last, shorter one).
+    constants: Vec<Constants>,
     /// Beads per graph c set by `with_beads_per_graph`; `None` = all beads in one graph (P-6).
     beads_per_graph: Option<usize>,
 }
@@ -199,7 +200,7 @@ impl MacePotential {
             kind,
             threads: n_threads,
             edges: Edges::default(),
-            constants: None,
+            constants: Vec::new(),
             beads_per_graph: None,
         })
     }
@@ -209,8 +210,16 @@ impl MacePotential {
     /// one graph of all beads (as before).
     /// Errors: c == 0 -> InvalidParameter { what: "beads per graph", value: 0.0 }.
     pub fn with_beads_per_graph(self, c: usize) -> Result<MacePotential, PotentialError> {
-        let _ = c;
-        unimplemented!("M8a: MacePotential::with_beads_per_graph (P-6 chunked evaluation)")
+        if c == 0 {
+            return Err(PotentialError::InvalidParameter {
+                what: "beads per graph",
+                value: 0.0,
+            });
+        }
+        Ok(MacePotential {
+            beads_per_graph: Some(c),
+            ..self
+        })
     }
 
     /// The chunk size set by `with_beads_per_graph`, or `None` (all beads in one graph).
@@ -223,6 +232,47 @@ impl MacePotential {
         self.r_max
     }
 
+    /// One batched graph of the beads of `q` (`[b, N, 3]`, bohr), whose first bead is bead
+    /// `first` of the call (for error messages): appends energies (Eh) and forces (Eh/bohr) of
+    /// its b beads, in bead order, to `energies` and `forces`.
+    fn evaluate_graph(
+        &mut self,
+        q: &Beads,
+        cell: Option<&Cell>,
+        first: usize,
+        energies: &mut Vec<f64>,
+        forces: &mut Vec<f64>,
+    ) -> Result<(), PotentialError> {
+        let (p, n) = (q.n_beads(), q.n_atoms());
+        self.edges.build(q, cell, self.r_max);
+        let pos: Vec<f64> = q.as_slice().iter().map(|x| x * BOHR_IN_ANGSTROM).collect();
+        let (e_ev, f_ev) = self
+            .forward(&pos, p, n)
+            .map_err(|e| backend("MACE evaluation", e))?;
+        if e_ev.len() != p || f_ev.len() != p * n * 3 {
+            return Err(PotentialError::Backend(format!(
+                "model returned {} energies and {} force components for {p} beads of {n} atoms",
+                e_ev.len(),
+                f_ev.len()
+            )));
+        }
+        if let Some(j) = e_ev.iter().position(|e| !e.is_finite()) {
+            return Err(PotentialError::Backend(format!(
+                "bead {}: non-finite energy",
+                first + j
+            )));
+        }
+        if let Some(k) = f_ev.iter().position(|f| !f.is_finite()) {
+            return Err(PotentialError::Backend(format!(
+                "bead {}: non-finite force",
+                first + k / (3 * n)
+            )));
+        }
+        energies.extend(e_ev.iter().map(|e| e / HARTREE_IN_EV));
+        forces.extend(f_ev.iter().map(|f| f * BOHR_IN_ANGSTROM / HARTREE_IN_EV));
+        Ok(())
+    }
+
     /// Runs the batched graph: positions `[P·N·3]` (Å), the edges in `self.edges`, P graphs of
     /// N atoms. Returns energies `[P]` (eV) and forces `[P·N·3]` (eV/Å).
     fn forward(
@@ -233,13 +283,18 @@ impl MacePotential {
     ) -> Result<(Vec<f64>, Vec<f64>), TchError> {
         let dev = self.device;
         let opts = (self.kind, dev);
-        if self.constants.as_ref().is_none_or(|c| c.p != p) {
-            self.constants = Some(Constants::new(&self.species, p, n, opts)?);
-        }
-        let c = self
-            .constants
-            .as_ref()
-            .ok_or_else(|| TchError::Convert("constant inputs missing".to_string()))?;
+        let k = match self.constants.iter().position(|c| c.p == p) {
+            Some(k) => k,
+            None => {
+                if self.constants.len() >= 2 {
+                    self.constants.remove(0);
+                }
+                self.constants
+                    .push(Constants::new(&self.species, p, n, opts)?);
+                self.constants.len() - 1
+            }
+        };
+        let c = &self.constants[k];
         let pn = (p * n) as i64;
         let ne = (self.edges.index.len() / 2) as i64;
         let positions = Tensor::f_from_slice(pos_angstrom)?
@@ -401,7 +456,8 @@ fn bead_edges(q: &Beads, b: usize, cell: Option<&Cell>, r2: f64, e: &mut BeadEdg
 
 impl Potential for MacePotential {
     /// P-6: energies (Eh, per bead) and forces (Eh/bohr, `[P, N, 3]`) of all beads of
-    /// `positions` (`[P, N, 3]`, bohr) as one batched graph; `virial` is `None`.
+    /// `positions` (`[P, N, 3]`, bohr), in consecutive chunks of `beads_per_graph` beads (all
+    /// beads by default), each chunk one batched graph; `virial` is `None`.
     fn evaluate(
         &mut self,
         positions: &Beads,
@@ -428,38 +484,23 @@ impl Potential for MacePotential {
                 value: self.r_max,
             });
         }
-        self.edges.build(positions, cell, self.r_max);
-        let pos: Vec<f64> = positions
-            .as_slice()
-            .iter()
-            .map(|x| x * BOHR_IN_ANGSTROM)
-            .collect();
-        let (e_ev, f_ev) = self
-            .forward(&pos, p, n)
-            .map_err(|e| backend("MACE evaluation", e))?;
-        if e_ev.len() != p || f_ev.len() != p * n * 3 {
-            return Err(PotentialError::Backend(format!(
-                "model returned {} energies and {} force components for {p} beads of {n} atoms",
-                e_ev.len(),
-                f_ev.len()
-            )));
+        // P-6: consecutive chunks of c beads in ascending bead order, each one graph evaluated
+        // exactly as a call with those beads alone; c ≥ P (or unset) is one graph of all beads.
+        let c = self.beads_per_graph.map_or(p, |c| c.min(p)).max(1);
+        let mut energies = Vec::with_capacity(p);
+        let mut forces = Vec::with_capacity(p * n * 3);
+        if c >= p {
+            self.evaluate_graph(positions, cell, 0, &mut energies, &mut forces)?;
+        } else {
+            let n3 = n * 3;
+            for s in (0..p).step_by(c) {
+                let b = c.min(p - s);
+                let chunk =
+                    Beads::from_vec(b, n, positions.as_slice()[s * n3..(s + b) * n3].to_vec())
+                        .map_err(|e| PotentialError::Backend(e.to_string()))?;
+                self.evaluate_graph(&chunk, cell, s, &mut energies, &mut forces)?;
+            }
         }
-        if let Some(j) = e_ev.iter().position(|e| !e.is_finite()) {
-            return Err(PotentialError::Backend(format!(
-                "bead {j}: non-finite energy"
-            )));
-        }
-        if let Some(k) = f_ev.iter().position(|f| !f.is_finite()) {
-            return Err(PotentialError::Backend(format!(
-                "bead {}: non-finite force",
-                k / (3 * n)
-            )));
-        }
-        let energies = e_ev.iter().map(|e| e / HARTREE_IN_EV).collect();
-        let forces = f_ev
-            .iter()
-            .map(|f| f * BOHR_IN_ANGSTROM / HARTREE_IN_EV)
-            .collect();
         Ok(Evaluation {
             energies,
             forces: Beads::from_vec(p, n, forces)
