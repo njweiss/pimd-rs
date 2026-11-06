@@ -202,6 +202,32 @@ outputs written to the wrong beads; per-P tensor cache reused for a chunk of a d
 converted from Å; xyz symbols ignored in favour of an `X` default; atom order permuted on read;
 count line ignored.
 
+### Clarifications (owner, 2026-11-06; Q34–Q37, test commit ea53edc)
+
+- **Test 7 float32 energy tolerance (Q34):** |ΔE| ≤ 0.25 eV per bead (8 float32 ulp at
+  |E| ≈ 4.56e5 eV; the M6 5e-3 eV is below float32 resolution for 660 atoms; measured 0.106 eV).
+  The force tolerance stays at the M6 1e-4·max |F|.
+- **Boxes (Q35):** `gen_m8_boxes.py` is bitwise reproducible (Python `random` seeded before
+  `addHydrogens`, OpenMM CPU platform, 1 thread, deterministic forces) and is checked with the usual
+  rtol 1e-9 / atol 1e-12. `crates/pimd-cli/tests/data/m8_boxes.json` supersedes
+  `spikes/m8/data/*.xyz`, which cannot be regenerated; M8b starts from its `nma_w216` box.
+- **Test 8 (Q36):** periodic Python client `crates/pimd-cli/tests/clients/mace_pbc_client.py`
+  (deterministic torch algorithms, profiling executor off, started with `pixi run -e ml python`);
+  i-PI cell as a diagonal matrix; PILE-L τ₀ = 100 fs, dt 0.5 fs, 2.5 ps equilibration, production
+  20 ps at P = 1 and 15 ps at P = 8, engine P = 8 with c = 3; σ = the largest block standard error
+  over 0.5, 1 and 2 ps blocks; bias allowance 0. `gen_ipi_water_mace.py` is slow (CHECK_IPI,
+  ≈ 3.3–4 h); generators needing the model run only with `PIMD_MACE_MODEL`; the engine side runs in
+  the CHECK_LONG + CHECK_TORCH step (≈ 2 h). MACE-OFF23 small has r_max = 4.5 Å.
+- **Config details (Q37):** xyz columns split on any run of spaces; the count line is a
+  non-negative integer alone on its line; empty, comma-separated or symbol-less atom lines are
+  malformed; a directory as `positions_xyz` is `CliError::Io`; an unknown symbol with kind "mace"
+  may name `system.symbols` or `system.positions_xyz`; a negative, fractional, string or boolean
+  `beads_per_graph` is `Parse` naming the key or `InvalidValue("potential.beads_per_graph")`;
+  configs without the key (or with c ≥ P) hash as on main at 3e6a5bd (values recorded in the
+  test); run.log mentions the chunk size. Test 6 asserts that a c = 3 run's trajectory differs
+  from the unchunked run's (true for this libtorch build; revisit if a libtorch update makes them
+  bitwise equal).
+
 ### Out of scope (M8a)
 
 Cell-list edges (decision 5); a free-memory check or automatic chunk size (decision 7); exporting
