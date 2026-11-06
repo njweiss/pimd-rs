@@ -69,6 +69,8 @@ pub struct MacePotential {
     edges: Edges,
     /// Input tensors that depend only on P, for the P of the last call.
     constants: Option<Constants>,
+    /// Beads per graph c set by `with_beads_per_graph`; `None` = all beads in one graph (P-6).
+    beads_per_graph: Option<usize>,
 }
 
 impl MacePotential {
@@ -198,7 +200,22 @@ impl MacePotential {
             threads: n_threads,
             edges: Edges::default(),
             constants: None,
+            beads_per_graph: None,
         })
+    }
+
+    /// Evaluates the P beads in consecutive chunks of `c` beads (the last chunk may be smaller),
+    /// each chunk one batched graph, chunks in ascending bead order (P-6). Without this call,
+    /// one graph of all beads (as before).
+    /// Errors: c == 0 -> InvalidParameter { what: "beads per graph", value: 0.0 }.
+    pub fn with_beads_per_graph(self, c: usize) -> Result<MacePotential, PotentialError> {
+        let _ = c;
+        unimplemented!("M8a: MacePotential::with_beads_per_graph (P-6 chunked evaluation)")
+    }
+
+    /// The chunk size set by `with_beads_per_graph`, or `None` (all beads in one graph).
+    pub fn beads_per_graph(&self) -> Option<usize> {
+        self.beads_per_graph
     }
 
     /// The model cutoff r_max in bohr.

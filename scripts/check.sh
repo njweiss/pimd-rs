@@ -71,10 +71,13 @@ if [ "${CHECK_LONG:-0}" = "1" ]; then
   RAYON_NUM_THREADS=4 cargo test --workspace --release --features "$features"
 
   if [ "${CHECK_TORCH:-0}" = "1" ]; then
-    # pimd-torch only: pimd-cli's long tests (neon) already ran above and have no torch part.
+    # pimd-torch, and from pimd-cli only the M8a MACE-OFF23 water vs i-PI test (about 2 h on the
+    # GPU): pimd-cli's other long tests (neon) already ran above and have no torch part.
     step "torch long validation (pixi ml env, release, features: torch,long-validation)"
     pixi run -e ml env LIBTORCH_USE_PYTORCH=1 RAYON_NUM_THREADS=4 \
       cargo test -p pimd-torch --release --features torch,long-validation
+    pixi run -e ml env LIBTORCH_USE_PYTORCH=1 RAYON_NUM_THREADS=4 \
+      cargo test -p pimd-cli --release --features torch,long-validation --test long_water_mace_ipi
   fi
 
   if [ -f validation/verify_reference_data.py ]; then
