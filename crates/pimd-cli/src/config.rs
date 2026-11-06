@@ -81,11 +81,11 @@ pub struct SystemConfig {
     /// Periodic cell, bohr (from `box_angstrom`, one value for a cube or three); `None` = gas
     /// phase (C-1).
     pub cell: Option<Cell>,
-    /// Initial position of each atom, length N, bohr (from `positions_angstrom`); `None` = the
-    /// M4 lattice (requires a cell).
+    /// Initial position of each atom, length N, bohr (from `positions_angstrom`, or from the
+    /// xyz file `positions_xyz`, MILESTONE_8); `None` = the M4 lattice (requires a cell).
     pub positions: Option<Vec<[f64; 3]>>,
     /// Element symbol of each atom, length N, each non-empty without whitespace, for output only
-    /// (`symbols`).
+    /// (`symbols`, or the xyz file `positions_xyz`).
     pub symbols: Option<Vec<String>>,
 }
 
@@ -119,7 +119,14 @@ pub enum PotentialConfig {
         /// `deterministic`: libtorch deterministic algorithms (default true).
         deterministic: bool,
         /// `beads_per_graph`: beads per batched graph c ≥ 1 (P-6, M8a); `None` (default) = all
-        /// beads in one graph.
+        /// beads in one graph. Results depend on c (to stated tolerances, D-3); min(c, P) enters
+        /// the config hash when it is < P.
+        ///
+        /// Safe sizes on an 8 GB card (MILESTONE_8 spike): about 190 k edges per graph for
+        /// MACE-OFF23 small in float32, 95 k small float64, 60 k medium float32, 30 k medium
+        /// float64; one bead of a 660-atom water box has about 25 k edges with small. On WSL2 an
+        /// oversized graph slows down instead of failing; setting
+        /// `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` reduces fragmentation.
         beads_per_graph: Option<usize>,
         /// 64-bit FNV-1a of the model file's bytes, read at parse time (config hash; not the
         /// path).
@@ -196,7 +203,9 @@ impl Config {
     /// kind = "mace") and the socket's `address`, `n_clients` and `timeout_s`; `[output]` is not
     /// covered (MILESTONE_4 "Restart determinism", MILESTONE_5 "Config hash"). For kind = "mace"
     /// it covers the model file's bytes (not its path), the device kind (not the index), dtype,
-    /// threads, deterministic and the symbols (MILESTONE_6 "Config"). With `[dynamics]`, every one
+    /// threads, deterministic and the symbols (MILESTONE_6 "Config"), and min(c, P) for
+    /// `beads_per_graph` = c only when it is < P (MILESTONE_8). Positions read from
+    /// `positions_xyz` hash as if given inline (not the path). With `[dynamics]`, every one
     /// of its fields is appended (MILESTONE_7); without it the hash is the M6 value. A checkpoint
     /// restarts only under a config with the same hash.
     pub(crate) fn hash(&self) -> u64 {
@@ -243,6 +252,7 @@ impl Config {
                 dtype,
                 threads,
                 deterministic,
+                beads_per_graph,
                 model_fnv1a,
                 ..
             } => {
@@ -262,6 +272,13 @@ impl Config {
                 // Hashed as atomic numbers (validated at parse time; 0 for anything else).
                 for s in sy.symbols.iter().flatten() {
                     u(pimd_torch::atomic_number(s).map_or(0, u64::from));
+                }
+                // MILESTONE_8: the effective chunk size min(c, P), only when it is < P, so a
+                // config without the key, or with c ≥ P, hashes as before (D-3).
+                if let Some(c) = beads_per_graph
+                    && (*c).min(sa.n_beads) < sa.n_beads
+                {
+                    u(*c as u64);
                 }
             }
         }
@@ -300,6 +317,54 @@ impl Config {
         }
         fnv1a(&bytes)
     }
+}
+
+/// `system.positions_xyz` (MILESTONE_8 "Config"): line 1 the atom count (a non-negative integer
+/// alone on its line), line 2 a comment (ignored), then exactly that many lines `symbol x y z`
+/// (Å, columns split on whitespace). Returns the positions (Å) and symbols in file order.
+/// Errors: an unreadable file -> `Io` naming the key and the path; malformed contents, a count
+/// ≠ the number of atom lines or ≠ `n_atoms`, or a non-finite coordinate -> `InvalidValue`
+/// naming `system.positions_xyz`.
+fn read_xyz(path: &str, n_atoms: usize) -> Result<(Vec<[f64; 3]>, Vec<String>), CliError> {
+    const KEY: &str = "system.positions_xyz";
+    let bytes = std::fs::read(path)
+        .map_err(|e| std::io::Error::new(e.kind(), format!("{KEY} {path}: {e}")))?;
+    // Values reported: the 1-based line number of a malformed line, else the count.
+    let text = std::str::from_utf8(&bytes).map_err(|_| invalid(KEY, 0.0))?;
+    let mut lines = text.lines();
+    let count = lines
+        .next()
+        .and_then(|l| l.trim().parse::<usize>().ok())
+        .ok_or_else(|| invalid(KEY, 1.0))?;
+    if lines.next().is_none() {
+        return Err(invalid(KEY, 2.0));
+    }
+    let atoms: Vec<&str> = lines.collect();
+    if atoms.len() != count || count != n_atoms {
+        return Err(invalid(KEY, count as f64));
+    }
+    let mut positions = Vec::with_capacity(count);
+    let mut symbols = Vec::with_capacity(count);
+    for (k, line) in atoms.iter().enumerate() {
+        let line_no = (k + 3) as f64;
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        let [sym, xs @ ..] = cols.as_slice() else {
+            return Err(invalid(KEY, line_no));
+        };
+        if xs.len() != 3 {
+            return Err(invalid(KEY, line_no));
+        }
+        let mut x = [0.0; 3];
+        for (v, c) in x.iter_mut().zip(xs) {
+            *v = c.parse::<f64>().map_err(|_| invalid(KEY, line_no))?;
+            if !v.is_finite() {
+                return Err(invalid(KEY, *v));
+            }
+        }
+        positions.push(x);
+        symbols.push((*sym).to_string());
+    }
+    Ok((positions, symbols))
 }
 
 /// 64-bit FNV-1a.
@@ -520,13 +585,14 @@ impl RawPotential {
     }
 
     /// The MACE keys and whether each is present.
-    fn mace_keys(&self) -> [(&'static str, bool); 5] {
+    fn mace_keys(&self) -> [(&'static str, bool); 6] {
         [
             ("model", self.model.is_some()),
             ("device", self.device.is_some()),
             ("dtype", self.dtype.is_some()),
             ("threads", self.threads.is_some()),
             ("deterministic", self.deterministic.is_some()),
+            ("beads_per_graph", self.beads_per_graph.is_some()),
         ]
     }
 }
@@ -614,18 +680,12 @@ impl RawConfig {
     /// Range checks and the conversion to atomic units (U-3), only through `pimd_core::units`.
     fn validate(self) -> Result<Config, CliError> {
         let RawConfig {
-            system: sy,
+            system: mut sy,
             potential: po,
             sampling: sa,
             output: out,
             dynamics: dy,
         } = self;
-        if sy.positions_xyz.is_some() {
-            unimplemented!("M8a: system.positions_xyz");
-        }
-        if po.beads_per_graph.is_some() {
-            unimplemented!("M8a: potential.beads_per_graph");
-        }
         let n_atoms = at_least_one("system.n_atoms", sy.n_atoms)?;
         let n_beads = at_least_one("sampling.n_beads", sa.n_beads)?;
         // Q17: sizes that cannot be allocated, checked before anything of that size is.
@@ -637,6 +697,23 @@ impl RawConfig {
         }
         if !fits_f64s(n_beads.checked_mul(n_atoms).and_then(|n| n.checked_mul(3))) {
             return Err(invalid("system.n_atoms", n_atoms as f64));
+        }
+        // MILESTONE_8: `positions_xyz` fills `positions_angstrom` and `symbols`, which then go
+        // through the same checks and conversion as when given inline.
+        if let Some(path) = &sy.positions_xyz {
+            for (key, present) in [
+                ("positions_angstrom", sy.positions_angstrom.is_some()),
+                ("symbols", sy.symbols.is_some()),
+            ] {
+                if present {
+                    return Err(CliError::Parse(format!(
+                        "system: `{key}` cannot be given with `positions_xyz`"
+                    )));
+                }
+            }
+            let (x, symbols) = read_xyz(path, n_atoms)?;
+            sy.positions_angstrom = Some(x);
+            sy.symbols = Some(symbols);
         }
         let masses = match (sy.mass_amu, sy.masses_amu) {
             (Some(m), None) => {
@@ -850,7 +927,8 @@ fn mace(_po: &RawPotential, _symbols: Option<&[String]>) -> Result<PotentialConf
 }
 
 /// `kind = "mace"` (P-6, MILESTONE_6 "Config"): `model` required, `device`, `dtype`, `threads`,
-/// `deterministic` with their defaults; `system.symbols` required and known to
+/// `deterministic` with their defaults, `beads_per_graph` optional and ≥ 1 (MILESTONE_8);
+/// `system.symbols` (or the symbols of `system.positions_xyz`) required and known to
 /// `pimd_torch::atomic_number`. Reads the model file to hash its bytes.
 #[cfg(feature = "torch")]
 fn mace(po: &RawPotential, symbols: Option<&[String]>) -> Result<PotentialConfig, CliError> {
@@ -903,7 +981,10 @@ fn mace(po: &RawPotential, symbols: Option<&[String]>) -> Result<PotentialConfig
         dtype,
         threads,
         deterministic: po.deterministic.unwrap_or(true),
-        beads_per_graph: None,
+        beads_per_graph: po
+            .beads_per_graph
+            .map(|c| at_least_one("potential.beads_per_graph", c))
+            .transpose()?,
         model_fnv1a,
     })
 }

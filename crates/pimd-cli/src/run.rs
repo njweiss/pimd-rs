@@ -322,6 +322,7 @@ fn potential(config: &Config) -> Result<Box<dyn Potential>, CliError> {
             dtype,
             threads,
             deterministic,
+            beads_per_graph,
             ..
         } => {
             // Validated against `pimd_torch::atomic_number` by `Config::from_toml_str`; a
@@ -334,14 +335,19 @@ fn potential(config: &Config) -> Result<Box<dyn Potential>, CliError> {
                     pimd_torch::atomic_number(s).ok_or_else(|| invalid("system.symbols", i as f64))
                 })
                 .collect::<Result<Vec<u8>, CliError>>()?;
-            Box::new(pimd_torch::MacePotential::load(
+            let mace = pimd_torch::MacePotential::load(
                 model,
                 &z,
                 *device,
                 *dtype,
                 *threads,
                 *deterministic,
-            )?)
+            )?;
+            // P-6 (MILESTONE_8): chunks of c beads when set; one graph of all beads otherwise.
+            Box::new(match beads_per_graph {
+                Some(c) => mace.with_beads_per_graph(*c)?,
+                None => mace,
+            })
         }
     })
 }
