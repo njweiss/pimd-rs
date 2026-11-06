@@ -118,6 +118,9 @@ pub enum PotentialConfig {
         threads: usize,
         /// `deterministic`: libtorch deterministic algorithms (default true).
         deterministic: bool,
+        /// `beads_per_graph`: beads per batched graph c ≥ 1 (P-6, M8a); `None` (default) = all
+        /// beads in one graph.
+        beads_per_graph: Option<usize>,
         /// 64-bit FNV-1a of the model file's bytes, read at parse time (config hash; not the
         /// path).
         model_fnv1a: u64,
@@ -445,6 +448,7 @@ struct RawSystem {
     masses_amu: Option<Vec<f64>>,
     symbols: Option<Vec<String>>,
     positions_angstrom: Option<Vec<[f64; 3]>>,
+    positions_xyz: Option<String>,
     box_angstrom: Option<RawBox>,
 }
 
@@ -481,6 +485,7 @@ struct RawPotential {
     dtype: Option<String>,
     threads: Option<usize>,
     deterministic: Option<bool>,
+    beads_per_graph: Option<usize>,
 }
 
 impl RawPotential {
@@ -615,6 +620,12 @@ impl RawConfig {
             output: out,
             dynamics: dy,
         } = self;
+        if sy.positions_xyz.is_some() {
+            unimplemented!("M8a: system.positions_xyz");
+        }
+        if po.beads_per_graph.is_some() {
+            unimplemented!("M8a: potential.beads_per_graph");
+        }
         let n_atoms = at_least_one("system.n_atoms", sy.n_atoms)?;
         let n_beads = at_least_one("sampling.n_beads", sa.n_beads)?;
         // Q17: sizes that cannot be allocated, checked before anything of that size is.
@@ -892,6 +903,7 @@ fn mace(po: &RawPotential, symbols: Option<&[String]>) -> Result<PotentialConfig
         dtype,
         threads,
         deterministic: po.deterministic.unwrap_or(true),
+        beads_per_graph: None,
         model_fnv1a,
     })
 }

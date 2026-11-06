@@ -8,7 +8,10 @@ Each crates/*/tests/data/gen_*.py is run with `--out <tmpdir>`. Every JSON file 
 next to the generator and match it: same keys and list lengths, numbers within rtol 1e-9 / atol 1e-12,
 other values exactly. The top-level "versions" block is reported, not compared. Generators in SLOW
 (the i-PI runs: neon about 34 min, water on GFN2-xTB about 1 h, the M7 double well about 30 min and
-neon dynamics about 35 min, the M7b PA-CMD double well about 34 min and neon about 13 min) are skipped unless CHECK_IPI=1.
+neon dynamics about 35 min, the M7b PA-CMD double well about 34 min and neon about 13 min, the M8a
+periodic MACE-OFF23 water about 4 h on the GPU) are skipped unless CHECK_IPI=1. Generators in
+NEEDS_MODEL need the MACE-OFF23 small model file (never committed) and are skipped unless
+PIMD_MACE_MODEL names it (MILESTONE_8 tests 7 and 8).
 Generators of crates/pimd-torch (MACE, PyTorch) run with the pixi `ml` interpreter
 (`pixi run -e ml python`, MILESTONE_6) instead of the interpreter running this script.
 """
@@ -29,7 +32,9 @@ SLOW = {
     "gen_ipi_neon_dynamics.py",
     "gen_ipi_doublewell_cmd.py",
     "gen_ipi_neon_cmd.py",
+    "gen_ipi_water_mace.py",
 }
+NEEDS_MODEL = {"gen_ipi_water_mace.py", "gen_mace_off23_nma.py"}
 ML_CRATES = {"pimd-torch"}
 
 
@@ -60,6 +65,10 @@ def main():
         rel = gen.relative_to(root)
         if gen.name in SLOW and os.environ.get("CHECK_IPI") != "1":
             print(f"skip {rel}: slow generator, set CHECK_IPI=1 to run it")
+            skipped += 1
+            continue
+        if gen.name in NEEDS_MODEL and not os.environ.get("PIMD_MACE_MODEL"):
+            print(f"skip {rel}: needs the MACE-OFF23 small model, set PIMD_MACE_MODEL to run it")
             skipped += 1
             continue
         with tempfile.TemporaryDirectory() as tmp:
