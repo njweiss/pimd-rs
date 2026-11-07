@@ -165,7 +165,32 @@ error bars stated) before the set of P is cut; the second P = 32 seed is the fir
 
 ## Log
 
-(empty until the plan is approved)
+All runs on the owner's machine (RTX 4060 8 GB, WSL2 kernel 5.15.167.4), from the repository root
+with `studies/m8-nma-water/run.sh`, engine `target/release/pimd-rs` built from `milestone-8` at
+af60965 (engine code = `main` f313da9) with `--features torch`, inside `pixi run -e ml`,
+`RAYON_NUM_THREADS=4`, `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. Versions as
+`validation/RESULTS.md` (M8a). MACE-OFF23 small (sha256 165cce4c…) exported with
+`crates/pimd-torch/scripts/export_mace.py --dtype float64` to
+`ff_models/exports/m8b-off23-small-f64.pt` (7 453 483 bytes, sha256 f52eb01e…); runs use
+`dtype = "float32"`.
+
+### 2026-11-07 Pilot (`make_configs.py pilot`; `out/pilot/`)
+
+From the box, n_equil = 0, two lengths per P (seed 8700 + P); ms per step = Δwall / Δsteps, so
+model loading and export cancel. Peak GPU memory from `gpu.csv` (5 s samples; the P = 1 runs are
+too short and light to register above the idle 438 MiB).
+
+| P | c | wall (short / long) | ms per step | spike R6 | ratio | peak GPU memory |
+|---|---|---|---|---|---|---|
+| 1 | 1 | 17.7 s (200) / 73.0 s (1 000) | 69.2 | 76 | 0.91 | ≤ 438 MiB |
+| 8 | 8 | 21.4 s (40) / 98.1 s (200) | 479 | 487 | 0.98 | 6 153 MiB |
+| 16 | 8 | 40.9 s (40) / 194.8 s (200) | 962 | ≈ 975 | 0.99 | 6 173 MiB |
+| 32 | 8 | 81.4 s (40) / 389.9 s (200) | 1 928 | 1 967 | 0.98 | 6 333 MiB |
+
+No P is above 1.5× the spike, so no spill and c = 8 is kept. All runs finished with finite
+energies; T_est at the last step 298.6–302.3 K. Production budget with these times (option b,
+plan lengths unchanged): P = 1 60 000 steps 1.2 h; P = 8 50 000 steps 6.7 h; P = 16 13.4 h; each
+P = 32 26.8 h; **74.8 h in total**, under the 100 h cap. Production lengths confirmed as planned.
 
 ## Writeup
 
