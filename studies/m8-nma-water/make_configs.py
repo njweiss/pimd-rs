@@ -6,7 +6,7 @@
 
 `pilot` and `p1` start from the box `nma_w216` of crates/pimd-cli/tests/data/m8_boxes.json, written
 to out/start/nma_w216.xyz. `quantum` takes the first and the last frame of the P = 1 production
-trajectory (out/production/p1/trajectory.xyz) as out/start/p1_first.xyz and p1_last.xyz: P = 8, 16
+trajectory (out/p1/p1/trajectory.xyz) as out/start/p1_first.xyz and p1_last.xyz: P = 8, 16
 and the first P = 32 start from the first, the second P = 32 from the last. Configs go to
 studies/m8-nma-water/configs/<set>/<run>.toml; paths inside are relative to the repository root,
 where run.sh runs them. Seeds: 8800 + P, second P = 32 8932; pilot 8700 + P.
@@ -97,7 +97,7 @@ def main():
     elif args.set == "p1":
         items = [("p1", toml("P = 1", start, 1, 8801, 20_000, 40_000))]
     else:
-        fr = list(frames(HERE / "out/production/p1/trajectory.xyz"))
+        fr = list(frames(HERE / "out/p1/p1/trajectory.xyz"))
         for tag, (comment, atoms) in (("first", fr[0]), ("last", fr[-1])):
             write_xyz(START / f"p1_{tag}.xyz", [a[0] for a in atoms],
                       [tuple(float(v) for v in a[1:4]) for a in atoms], f"P = 1 production frame {comment}")
