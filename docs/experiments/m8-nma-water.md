@@ -192,6 +192,18 @@ energies; T_est at the last step 298.6–302.3 K. Production budget with these t
 plan lengths unchanged): P = 1 60 000 steps 1.2 h; P = 8 50 000 steps 6.7 h; P = 16 13.4 h; each
 P = 32 26.8 h; **74.8 h in total**, under the 100 h cap. Production lengths confirmed as planned.
 
+### 2026-11-07 15:39 – 16:51 P = 1 production (`production.sh`; `out/p1/p1/`, `out/production.log`)
+
+Seed 8801, 20 000 + 40 000 steps from the box, c = 1: 4 328 s wall (72.1 ms per step over all
+60 000 steps, startup included). Health (`health.py`): 1 000 frames, largest NMA bond 1.108× its
+start length, largest X–H distance 1.207 Å, no proton transfer: ok. Mean T_est 297.82 K, block
+standard error 0.51 / 0.60 / 0.60 / 0.87 K for 0.5 / 1 / 2 / 4 ps blocks: −2.5σ to −3.6σ from
+300 K, inside the 5σ health limit; production halves 297.16 and 298.47 K. Recorded to compare
+with the quantum runs (a float32 force error would heat, not cool).
+
+`make_configs.py quantum` then wrote `out/start/p1_first.xyz` (P = 1 production step 40, the first
+frame) and `p1_last.xyz` (step 40 000) and the four quantum configs; P = 8 started 16:51:24.
+
 ## Writeup
 
 (after the analysis)
