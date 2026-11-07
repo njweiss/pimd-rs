@@ -23,6 +23,7 @@ across checkpoint/restart.
 | M6 Torch backend | in-process MACE (TorchScript, CPU/CUDA), ML-PIMD study of water with MACE-OFF23 | merged |
 | M7a Dynamics | RPMD and TRPMD segments, centroid correlation functions, Green–Kubo D; double well and liquid neon vs i-PI | merged |
 | M7b PA-CMD | partially adiabatic centroid MD (dynamical masses, adiabatic frequency Ω); harmonic, double well and liquid neon vs i-PI | merged |
+| M8a Periodic MACE chunks | bead-chunked MACE evaluation (`beads_per_graph`), xyz input; NMA + 216 waters vs Python MACE, 64 waters vs i-PI | merged |
 
 Release gate R1 (after M4): on hold; not yet published. Not implemented: electrostatics,
 constraints, non-orthorhombic cells, Python bindings.

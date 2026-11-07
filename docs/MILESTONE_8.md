@@ -1,6 +1,6 @@
 # Milestone 8: Solvated ligand (N-methylacetamide in water), periodic MACE with larger batches
 
-Status: **M8a brief approved (2026-11-05)** (SPEC P-6 and D-3 amended). Spike done; decisions 1–8
+Status: **M8a merged (2026-11-07)** (brief approved 2026-11-05; SPEC P-6 and D-3 amended). M8b study next. Spike done; decisions 1–8
 taken. Three phases, run in order:
 
 | Phase | Flow | Output |
