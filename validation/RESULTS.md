@@ -380,6 +380,53 @@ three methods agree.
 
 Run times: i-PI references in the gate: neon pa-cmd 743 s, double well pa-cmd 2 044 s.
 
+## M8a Periodic MACE with bead chunks
+
+Numbers printed by `cargo test -p pimd-torch --release --features torch,long-validation --test
+long_mace_off23_pbc -- --nocapture` and `cargo test -p pimd-cli --release --features
+torch,long-validation --test long_water_mace_ipi -- --nocapture` (pixi `ml` env,
+`PIMD_MACE_MODEL` = MACE-OFF23 small, RTX 4060) on branch `milestone-8` (commit 60abfa4), after
+`CHECK_LONG=1 CHECK_TORCH=1 CHECK_IPI=1 ./scripts/check.sh` had passed on the same commit
+(1 414 tests, 0 failed; all 14 reference generators, including the new box, NMA and i-PI MACE
+water ones, reproduced the committed files) [run]. Chunked evaluation (SPEC P-6): the P beads are
+evaluated as consecutive graphs of c beads. Tolerances and their derivation: the doc comments of
+`crates/pimd-torch/tests/long_mace_off23_pbc.rs` and `crates/pimd-cli/tests/long_water_mace_ipi.rs`
+[comment]; the float32 energy tolerance is Q34.
+
+### NMA + 216 waters vs Python MACE (periodic)
+
+660 atoms, L = 18.760 Å, P = 4 displaced beads, against mace's ASE calculator in float64 with
+periodic boundaries [json]. Worst bead:
+
+| Row | max \|ΔE\| (eV) | relative | max \|ΔF\| / max \|F\| | tolerance (E; F) |
+|---|---|---|---|---|
+| float64 CPU, c = 2 | 5.82e-11 | 1.28e-16 | 5.80e-16 | 1e-12·\|E\|; 1e-10 |
+| float32 CUDA, c = 2 | 1.06e-1 | 2.32e-7 | 1.75e-5 | 0.25 eV; 1e-4 |
+| float32 CUDA, c = 3 (3 + 1) | 1.06e-1 | 2.32e-7 | 1.73e-5 | 0.25 eV; 1e-4 |
+
+The float32 energy error is 3.4 float32 ulp at |E| ≈ 4.56e5 eV (the total includes the atomic
+reference energies).
+
+### 64 waters vs i-PI with a Python MACE client, P = 1 and 8
+
+MACE-OFF23 small in float32 on CUDA on both sides; pimd-rs in-process with c = 3 (P = 8: chunks
+3 + 3 + 2), positions from `positions_xyz`; i-PI 3.3.1 driving one periodic Python MACE client.
+300 K, dt 0.5 fs, PILE-L τ₀ = 100 fs, 2.5 ps equilibration, production 20 ps (P = 1) and 15 ps
+(P = 8) [json]. Per molecule; tolerance 5σ_c, bias allowance 0.
+
+| P | ⟨E_vir⟩ pimd-rs (Eh) | ⟨E_vir⟩ i-PI (Eh) | Δ | ⟨V̄⟩ Δ | g_OO worst bin (of 60) |
+|---|---|---|---|---|---|
+| 1 | −76.490804 ± 0.000072 | −76.490630 ± 0.000033 | −2.19σ_c | −2.19σ_c | 2.75σ_c |
+| 8 | −76.476828 ± 0.000063 | −76.476847 ± 0.000073 | 0.19σ_c | 0.19σ_c | 1.85σ_c |
+
+The quantum shift ⟨E_vir⟩_8 − ⟨E_vir⟩_1 = 0.0140 Eh per molecule (≈ 150σ). σ is the largest
+block error over 0.5, 1 and 2 ps blocks; at P = 1 it still grows with block length (4.1, 5.3,
+7.2e-5 Eh), so the P = 1 error bar may be slightly underestimated. The i-PI g_OO first peak is
+2.63 (P = 1) and 2.50 (P = 8).
+
+Run times: pimd-rs 2 881 s (P = 1) and 6 372 s (P = 8), run concurrently; the i-PI reference in
+the gate 2 724 s (P = 1) and 13 930 s (P = 8).
+
 ## Performance
 
 `validation/benchmark.sh` (3 min 23 s wall), N = 108 neon at the state point above, best of 3
