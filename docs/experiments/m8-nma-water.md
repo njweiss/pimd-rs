@@ -204,6 +204,34 @@ with the quantum runs (a float32 force error would heat, not cool).
 `make_configs.py quantum` then wrote `out/start/p1_first.xyz` (P = 1 production step 40, the first
 frame) and `p1_last.xyz` (step 40 000) and the four quantum configs; P = 8 started 16:51:24.
 
+### 2026-11-07 16:51 – 23:33 P = 8 production; health check failed, series stopped 2026-11-08 07:17
+
+Seed 8808, 10 000 + 40 000 steps from `p1_first.xyz`, c = 8: 24 092 s wall (482 ms per step).
+`health.py`: **FAIL** on two criteria as written; the third holds.
+
+- Bond / proton-transfer criterion (per bead): largest NMA bond 1.293× its start length (limit
+  1.3), largest X–H 1.410 Å (limit 1.3 Å). 209 of 3 512 000 bead X–H samples (1 000 frames × 8
+  beads × 439 X–H) exceed 1.3 Å: 184 are NMA methyl C–H (atoms 0 and 8), 25 water O–H, one bead
+  each. In 7 of the 209 the nearest heavy atom is another O (single-bead excursion, 1.19–1.35 Å
+  from it), but every centroid X–H is ≤ 1.216 Å and the H centroid stays on its own atom:
+  no transfer. Bead X–H distribution stationary over the four production quarters (methyl C–H
+  bead mean 1.103 Å, s.d. 0.065 Å vs 1.090 / 0.024 Å at P = 1). Reading: zero-point bead
+  spread (≈ 3σ to 1.3 Å for C–H), not a dissociation; the per-bead 1.3 Å threshold is a classical
+  criterion.
+- T_est 297.77 K, block standard error 0.088 / 0.109 / 0.097 K (1 / 2 / 4 ps): −20σ to −25σ;
+  halves 297.90 and 297.63 K. Same offset as P = 1 (−2.2 K), now resolved because the bead
+  average cuts the noise. Candidate cause: BAOAB end-of-step kinetic bias. For a harmonic mode,
+  ⟨p²⟩ after the final B is kT(1 − (ωΔt)²/4); with Δt = 0.5 fs, per water O–H stretches
+  (3 700 cm⁻¹) 2 × 0.030, bend (1 600 cm⁻¹) 0.006, librations (≈ 600 cm⁻¹) 3 × 0.001 over 9
+  degrees of freedom ≈ 0.76 % ≈ 2.3 K. Configurational sampling is not affected to this order.
+  Not yet checked at Δt/2 (predicted offset −0.6 K).
+- ⟨E_prim⟩ − ⟨E_vir⟩ = −9.8 × 10⁻⁶ Eh per atom, σ_c 2.7 × 10⁻⁶: −3.6σ_c, inside 5σ_c (ok).
+
+Per the change rules the series was stopped: P = 16 (started 23:32:56) was terminated at
+07:17, after its checkpoint at production step 19 000 (`out/quantum/p16/checkpoint.bin`), so it
+can resume with `run.sh … --restart`. GPU time so far: 1.2 + 6.7 + 7.7 h = 15.6 h of the 100 h
+cap. Owner decision pending on the health criteria.
+
 ## Writeup
 
 (after the analysis)
