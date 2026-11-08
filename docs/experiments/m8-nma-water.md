@@ -139,10 +139,14 @@ for the duration (owner action). Disk: ≈ 4 GB of trajectories
 
 ### What counts as agreement
 
-- **Run health** (must hold, else stop and investigate): no NMA bond longer than 1.3× its
-  starting length and no proton transfer (every H within 1.3 Å of its own heavy atom) in any bead
-  of any frame; estimated temperature within 5σ of 300 K; ⟨E_vir⟩ and ⟨E_prim⟩ agree within 5σ_c
-  at every P.
+- **Run health** (must hold, else stop and investigate; amended 2026-11-08 after P = 8, see the
+  log): in the bead centroids of every frame, no NMA bond longer than 1.3× its starting length and
+  no proton transfer (every H centroid within 1.3 Å of its own heavy atom's centroid and closer
+  to it than to any other heavy atom's); the per-bead extremes are reported, not limited.
+  |T_est − 300 K − b_P| < 5σ + 0.5 K, with b_P the BAOAB end-of-step kinetic bias at Δt = 0.5 fs
+  of the harmonic mode model (`tbias_harmonic.py`): −2.29, −2.30, −2.33, −2.46 K at P = 1, 8,
+  16, 32; the 0.5 K covers the mode model. ⟨E_vir⟩ and ⟨E_prim⟩ agree within 5σ_c at every P.
+  (As first written: the bond and transfer limits in every bead, T_est within 5σ of 300 K.)
 - **Reproducibility**: the two P = 32 runs agree within 5σ_c on every reported observable; the two
   production halves of every run agree within 5σ_c (otherwise the equilibration was too short:
   the first 5 ps of production is discarded and the shortening stated).
@@ -153,7 +157,9 @@ for the duration (owner action). Disk: ≈ 4 GB of trajectories
   normal milestone, and the energies of this study are reported with the measured correction.
 - **dt bias**: none assumed (spike R5: no resolved energy drift at 0.5 or 1.0 fs in NVE). If a
   quantum−classical difference of interest is below 3σ_c, the writeup says it is not resolved; no
-  dt/2 run is planned.
+  dt/2 run is planned. T_est carries a known kinetic bias of the end-of-step momenta (run health
+  above); configurational averages, which every structural observable uses, do not have it to
+  this order.
 
 ### What would change the plan
 
@@ -231,6 +237,27 @@ Per the change rules the series was stopped: P = 16 (started 23:32:56) was termi
 07:17, after its checkpoint at production step 19 000 (`out/quantum/p16/checkpoint.bin`), so it
 can resume with `run.sh … --restart`. GPU time so far: 1.2 + 6.7 + 7.7 h = 15.6 h of the 100 h
 cap. Owner decision pending on the health criteria.
+
+### 2026-11-08 Health criteria amended (owner: option A); series resumed
+
+Bias check at P = 1, no new run: the O(Δt²) force form ΔT = −(Δt²/4)⟨Σ|F|²/m⟩/(3Nk_B) on 50
+production frames (MACE-OFF23 small, float64, `tbias_forces.py`) predicts −2.26 ± 0.02 K;
+measured −2.18 ± 0.87 K. Harmonic mode model (`tbias_harmonic.py`, exact BAOAB + PILE-L
+stationary ⟨p²⟩ per ring-polymer normal mode): −2.29 K at P = 1, −2.30 K at P = 8 (measured
+−2.23 ± 0.11 K, +0.6σ), −2.33 K at P = 16, −2.46 K at P = 32; at Δt = 0.25 fs −0.57 K. The
+P = 1 Δt/2 run proposed before the amendment was dropped: at P = 1 a 20–30 min run gives σ ≈
+1.3 K and cannot separate −0.6 from −2.2 K; a P = 8 run that could (σ ≈ 0.2 K) costs ≈ 2.7 h.
+The two predictions above replace it.
+
+Run health amended as recorded under "What counts as agreement" (centroid structure criteria,
+per-bead extremes reported; T_est against 300 K + b_P). `health.py` rewritten to match, and
+it now joins `part<k>/` outputs (checked on a split copy of the P = 1 output). Under the
+amended criteria: P = 1 ok (centroid = bead values; T_est +0.1σ from b_P); P = 8 ok (centroids:
+largest NMA bond 1.116×, largest X–H 1.216 Å, no transfer; beads 1.293× and 1.410 Å; T_est
++0.6σ; E_prim − E_vir −3.6σ_c).
+
+`resume.sh` restarts P = 16 from its checkpoint, then runs both P = 32; `health.py` runs after
+each and a failure stops the sequence.
 
 ## Writeup
 
