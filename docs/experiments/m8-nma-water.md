@@ -259,6 +259,28 @@ largest NMA bond 1.116×, largest X–H 1.216 Å, no transfer; beads 1.293× and
 `resume.sh` restarts P = 16 from its checkpoint, then runs both P = 32; `health.py` runs after
 each and a failure stops the sequence.
 
+### 2026-11-08 11:32 – 17:10 P = 16 production; energy health check failed, series stopped
+
+Seed 8816, 10 000 + 40 000 steps from `p1_first.xyz`, c = 8; stopped at production step 19 000
+(2026-11-08 07:17) and restarted from its checkpoint (`part0/` holds the first leg). Wall:
+7.7 h first leg + 20 227 s second leg (0.96 s per step) ≈ 13.3 h. `health.py` (amended):
+
+- Centroids: largest NMA bond 1.112×, largest X–H 1.212 Å, no transfer: ok. Beads (no limit):
+  1.314× and 1.432 Å.
+- T_est 297.77 K, σ 0.033 K, offset −2.23 K against b_16 = −2.33 K: +3.2σ: ok.
+- **⟨E_prim⟩ − ⟨E_vir⟩ = −3.31 × 10⁻⁵ Eh per atom, σ_c 2.2 × 10⁻⁶: −15σ_c: FAIL.** The series
+  stopped by itself (`resume.sh`); P = 32 not started.
+
+Reading: BAOAB step-size bias of the ring-polymer position distribution, which enters the two
+estimators differently and grows with P. `ebias_harmonic.py` (exact stationary ⟨Q_k²⟩ per
+normal mode, same water mode model as b_P) predicts ⟨E_prim⟩ − ⟨E_vir⟩ = −8.8 × 10⁻⁶ (P = 8),
+−3.22 × 10⁻⁵ (P = 16), −8.95 × 10⁻⁵ Eh per atom (P = 32) at Δt = 0.5 fs, ×1/4 at 0.25 fs;
+measured −9.8 ± 2.7 × 10⁻⁶ (P = 8) and −3.31 ± 0.22 × 10⁻⁵ (P = 16). Split into the
+estimators' own errors: E_vir +9.5 × 10⁻⁶, +2.0 × 10⁻⁵, +2.7 × 10⁻⁵; E_prim +0.7 × 10⁻⁶,
+−1.2 × 10⁻⁵, −6.2 × 10⁻⁵ Eh per atom at P = 8, 16, 32. For scale, ⟨E_vir⟩(P = 8) − ⟨E_prim⟩(P = 1)
+= 4.6 × 10⁻³ Eh per atom: the predicted E_vir bias is 0.2–0.6 % of the quantum−classical
+difference. GPU time so far 15.6 + 5.6 = 21.2 h. Owner decision pending.
+
 ## Writeup
 
 (after the analysis)
