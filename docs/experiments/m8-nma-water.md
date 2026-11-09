@@ -145,8 +145,13 @@ for the duration (owner action). Disk: ≈ 4 GB of trajectories
   to it than to any other heavy atom's); the per-bead extremes are reported, not limited.
   |T_est − 300 K − b_P| < 5σ + 0.5 K, with b_P the BAOAB end-of-step kinetic bias at Δt = 0.5 fs
   of the harmonic mode model (`tbias_harmonic.py`): −2.29, −2.30, −2.33, −2.46 K at P = 1, 8,
-  16, 32; the 0.5 K covers the mode model. ⟨E_vir⟩ and ⟨E_prim⟩ agree within 5σ_c at every P.
-  (As first written: the bond and transfer limits in every bead, T_est within 5σ of 300 K.)
+  16, 32; the 0.5 K covers the mode model. |⟨E_prim⟩ − ⟨E_vir⟩ − d_P| < 5σ_c + 0.25 |d_P|,
+  with d_P the BAOAB step-size bias of that difference from `ebias_harmonic.py`: 0, −8.8 × 10⁻⁶,
+  −3.22 × 10⁻⁵, −8.95 × 10⁻⁵ Eh per atom at P = 1, 8, 16, 32 (amended 2026-11-08 after P = 16;
+  the 25 % covers the mode model). Energies are reported from E_vir, with its predicted
+  step-size error (+0.95, +2.0, +2.7 × 10⁻⁵ Eh per atom at P = 8, 16, 32) stated as a systematic.
+  (As first written: the bond and transfer limits in every bead, T_est within 5σ of 300 K,
+  ⟨E_vir⟩ and ⟨E_prim⟩ within 5σ_c.)
 - **Reproducibility**: the two P = 32 runs agree within 5σ_c on every reported observable; the two
   production halves of every run agree within 5σ_c (otherwise the equilibration was too short:
   the first 5 ps of production is discarded and the shortening stated).
@@ -280,6 +285,15 @@ estimators' own errors: E_vir +9.5 × 10⁻⁶, +2.0 × 10⁻⁵, +2.7 × 10⁻�
 −1.2 × 10⁻⁵, −6.2 × 10⁻⁵ Eh per atom at P = 8, 16, 32. For scale, ⟨E_vir⟩(P = 8) − ⟨E_prim⟩(P = 1)
 = 4.6 × 10⁻³ Eh per atom: the predicted E_vir bias is 0.2–0.6 % of the quantum−classical
 difference. GPU time so far 15.6 + 5.6 = 21.2 h. Owner decision pending.
+
+### 2026-11-09 Energy health criterion amended (owner: option A); P = 32 started
+
+Run health amended as recorded under "What counts as agreement" (⟨E_prim⟩ − ⟨E_vir⟩ against d_P
+of `ebias_harmonic.py`; energies from E_vir with its predicted step-size error as a systematic).
+`health.py` updated; `resume.sh` now takes the runs to do and restarts any that has a checkpoint.
+Re-checked: P = 8 ok (−9.8 × 10⁻⁶ against −8.8 × 10⁻⁶ Eh); P = 16 ok (−3.31 × 10⁻⁵ against
+−3.22 × 10⁻⁵ Eh; 40 000 rows and 1 000 frames after joining `part0/`). `resume.sh p32 p32_seed2`
+started.
 
 ## Writeup
 

@@ -8,7 +8,8 @@ the start structure's (limit 1.3) and the largest distance of any H from its own
 (limit 1.3 Å), and whether any H centroid is closer to another heavy atom than to its own (a
 proton transfer). The same two distances over every bead are reported without a limit. Then
 |T_est − 300 K − b_P| < 5σ + 0.5 K, with b_P the BAOAB kinetic bias of tbias_harmonic.py and σ
-the largest block standard error over 1, 2 and 4 ps blocks, and ⟨E_prim⟩ − ⟨E_vir⟩ within 5σ_c.
+the largest block standard error over 1, 2 and 4 ps blocks, and
+|⟨E_prim⟩ − ⟨E_vir⟩ − d_P| < 5σ_c + 0.25 |d_P|, with d_P the step-size bias of ebias_harmonic.py.
 Bonds are taken from the start structure (out/start/nma_w216.xyz): NMA pairs closer than 1.6 Å,
 each water's O with the two H that follow it. Minimum image in the cubic box (C-2). Restarted
 runs: part<k>/ outputs are joined, each cut before the first step of the next part.
@@ -22,6 +23,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 N_NMA = 12
 BIAS_K = {1: -2.29, 8: -2.30, 16: -2.33, 32: -2.46}  # tbias_harmonic.py, Δt = 0.5 fs
+BIAS_D_EH = {1: 0.0, 8: -8.80e-6, 16: -3.22e-5, 32: -8.95e-5}  # ebias_harmonic.py, Δt = 0.5 fs
 ROWS_PER_PS = 2000  # Δt = 0.5 fs, stride 1
 
 
@@ -122,14 +124,15 @@ def check(run):
     s_d = block_sem(d) if p > 1 else 0.0
     ok_struct = c_ratio < 1.3 and c_xh < 1.3 and not transfers
     ok_t = abs(t - 300.0 - BIAS_K[p]) < 5 * s_t + 0.5
-    ok_e = p == 1 or abs(d.mean()) < 5 * s_d
+    ok_e = p == 1 or abs(d.mean() - BIAS_D_EH[p]) < 5 * s_d + 0.25 * abs(BIAS_D_EH[p])
     print(f"{run}: P = {p}, {n_frames} frames, {len(obs)} rows")
     print(f"  centroids: max NMA bond / start {c_ratio:.3f}, max X-H {c_xh:.3f} Å, "
           f"{len(transfers)} transfers {transfers[:5]}: {'ok' if ok_struct else 'FAIL'}")
     print(f"  beads (no limit): max NMA bond / start {b_ratio:.3f}, max X-H {b_xh:.3f} Å")
     print(f"  T_est {t:.2f} K, σ {s_t:.3f} K, offset {t - 300:+.2f} K vs b_P {BIAS_K[p]:+.2f} K: "
           f"{(t - 300 - BIAS_K[p]) / s_t:+.1f}σ: {'ok' if ok_t else 'FAIL'}")
-    print(f"  E_prim − E_vir {d.mean():+.3e} Eh, σ_c {s_d:.2e}: {'ok' if ok_e else 'FAIL'}")
+    print(f"  E_prim − E_vir {d.mean():+.3e} Eh vs d_P {BIAS_D_EH[p]:+.2e} Eh, σ_c {s_d:.2e}: "
+          f"{'ok' if ok_e else 'FAIL'}")
     return ok_struct and ok_t and ok_e
 
 
