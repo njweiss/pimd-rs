@@ -295,6 +295,20 @@ Re-checked: P = 8 ok (−9.8 × 10⁻⁶ against −8.8 × 10⁻⁶ Eh); P = 16 
 −3.22 × 10⁻⁵ Eh; 40 000 rows and 1 000 frames after joining `part0/`). `resume.sh p32 p32_seed2`
 started.
 
+### 2026-11-09 07:50 – 2026-11-10 10:40 P = 32 production (first seed)
+
+Seed 8832, 10 000 + 40 000 steps from `p1_first.xyz`, c = 8: 96 533 s wall (1 931 ms per step,
+startup included). `health.py`: centroids: largest NMA bond 1.108×, largest X–H 1.207 Å, no
+transfer: ok (beads 1.338× and 1.458 Å). T_est 297.66 K, σ 0.024 K, offset −2.34 K against
+b_32 = −2.46 K: +5.1σ, inside 5σ + 0.5 K: ok. ⟨E_prim⟩ − ⟨E_vir⟩ = −8.41 × 10⁻⁵ Eh per atom
+against d_32 = −8.95 × 10⁻⁵ (σ_c 3.8 × 10⁻⁶): ok. The second P = 32 (seed 8932, from
+`p1_last.xyz`) started 10:40:17. GPU time so far 21.2 + 26.8 = 48.0 h.
+
+`analyse.py` written (commit 661ac82) and run on P = 1, 8, 16, 32 (P = 1 test: the first-peak
+search uses fixed windows around each H-bond shell, because the single-site H_N–O_w and N–O_w
+RDFs and the intermolecular g_OH have first peaks lower than the shells beyond; chosen after
+looking at the P = 1 RDFs). Results are read after the second seed.
+
 ## Writeup
 
 (after the analysis)
