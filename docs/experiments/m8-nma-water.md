@@ -320,6 +320,16 @@ dynamics are deterministic and unaffected, but it was still in equilibration at 
 after it started, against ≈ 5.4 h planned). GPU time lost ≈ 7 h, counted against the cap (not
 downtime). The re-evaluation runs only after all production, as planned.
 
+P = 32 seed 2 reached production at ≈ 23:57 (normal speed restored once the test was killed).
+
+### 2026-11-11 Workstation restart during P = 32 seed 2; restarted from checkpoint
+
+The workstation restarted unexpectedly (cause unknown; uptime from 10:30:30). The run's last
+output was at 03:29; last checkpoint 03:09, production step 6 000. Restarted at 10:36:15 with
+`resume.sh p32_seed2` (`--restart`, first leg moved to `part0/`); first row step 6 001.
+Downtime 03:29 – 10:36 (≈ 7.1 h) is not counted against the cap; the ≈ 20 min between the
+checkpoint and the crash is rerun. Projected GPU time for production ≈ 83 h.
+
 ## Writeup
 
 (after the analysis)
