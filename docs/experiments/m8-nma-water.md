@@ -309,6 +309,17 @@ search uses fixed windows around each H-bond shell, because the single-site H_N�
 RDFs and the intermolecular g_OH have first peaks lower than the shells beyond; chosen after
 looking at the P = 1 RDFs). Results are read after the second seed.
 
+### 2026-11-10 Protocol breach: float64 re-evaluation test run concurrently with P = 32 seed 2
+
+`reeval_f64.py` written. Its test on P = 1 was started at 15:26 while the second P = 32 was
+running, against the protocol ("never concurrently", GPU otherwise idle). The two processes
+together held 7.8 of the GPU's 8.2 GB, so memory spilled into shared memory and both slowed
+drastically: the test had not finished 50 single-bead evaluations after 7 h 54 min. It was
+killed at 23:21, unfinished and without output. The P = 32 run was not interrupted; its
+dynamics are deterministic and unaffected, but it was still in equilibration at 23:21 (12.7 h
+after it started, against ≈ 5.4 h planned). GPU time lost ≈ 7 h, counted against the cap (not
+downtime). The re-evaluation runs only after all production, as planned.
+
 ## Writeup
 
 (after the analysis)
