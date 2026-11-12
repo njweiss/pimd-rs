@@ -3,12 +3,17 @@
 //! 5 (errors) and 6 (end-to-end); test 4 (ASE) is `long_traj_ase.rs`. Details the brief leaves
 //! open are pinned in QUESTIONS.md Q40.
 //!
-//! Wrapping (M9b "Wrapping"): molecules are the connected components of the first kept frame's
-//! centroids, edges between atoms closer than `--bond-angstrom` (strictly) under the C-2 minimum
-//! image; each frame, every molecule's beads and centroids move by one lattice vector, the one
-//! that puts the centroid of the molecule's first (lowest-index) atom in [0, L)³ (C-3 interval),
-//! i.e. −floor(c/L)·L per component. Expected values below are hand-derived; all inputs are
-//! multiples of 0.25 Å with L = 10 Å so every expected number is exact in f64.
+//! Wrapping (M9b "Wrapping", amended by the owner on Q40 item 3): molecules are the connected
+//! components of the first kept frame's centroids, edges between atoms closer than
+//! `--bond-angstrom` (strictly) under the C-2 minimum image. Make-whole, once, in that frame: a
+//! breadth-first walk from each molecule's lowest-index atom (FIFO queue; from the atom taken off
+//! the queue, its unvisited bonded atoms in ascending index) gives each newly reached atom j, from
+//! parent i, the lattice offset n_j = n_i + k·L with k = −floor((c_j − c_i)/L + 1/2) per component
+//! (c_j placed at the minimum image of the parent's placed centroid; n_root = 0). Every frame, each
+//! atom's beads and centroid move by its fixed offset n_j, then every molecule's beads and
+//! centroids by one lattice vector −floor(c/L)·L, c the (offset) centroid of its lowest-index atom
+//! (C-3 interval [0, L)). `--no-wrap` or no box: neither step. Expected values below are
+//! hand-derived; inputs are multiples of 0.25 Å so every expected number is exact in f64.
 
 #![allow(clippy::needless_range_loop)]
 
@@ -272,12 +277,16 @@ fn ring_polymer_not_split() {
     assert_rows(&c[0], &want, "centroids");
 }
 
-/// M9b test 2, C-2: bonds use the minimum image. P = 1, L = 10. Frame 1: atoms 0 (0.25, 5, 5) and
-/// 1 (9.5, 5, 5) are 9.25 apart, 0.75 under the minimum image, so one molecule; likewise 3
-/// (2, 2, 9.75) and 4 (2, 2, 0.5); atom 2 (5, 5, 5) alone. Frame 2: 0 → (−0.25, 5, 5), 1 → (9, 5, 5)
-/// (first atom 0 outside: both + (10, 0, 0) → 9.75 and 19); 3 → (2, 2, 10.25), 4 → (2, 2, 1)
-/// (first atom 3 outside: both − (0, 0, 10) → 0.25 and −9). Without the minimum image atoms 1 and 4
-/// would be their own molecules and stay at 9 and 1.
+/// M9b test 2, C-2, Q40 item 3: bonds use the minimum image, and a molecule split in the first
+/// frame is made whole. P = 1, L = 10. Frame 1: atoms 0 (0.25, 5, 5) and 1 (9.5, 5, 5) are 9.25
+/// apart, 0.75 under the minimum image, so one molecule; d = 9.25, k = −floor(0.925 + 0.5) = −1:
+/// offset n_1 = (−10, 0, 0). Likewise 3 (2, 2, 9.75) and 4 (2, 2, 0.5): d_z = −9.25,
+/// k = −floor(−0.425) = 1, n_4 = (0, 0, +10). Atom 2 (5, 5, 5) alone.
+/// Frame 1 (wrap shifts 0, roots 0 and 3 inside): 1 → (−0.5, 5, 5), 4 → (2, 2, 10.5).
+/// Frame 2: 0 → (−0.25, 5, 5), 1 → (9, 5, 5): wrap + (10, 0, 0) from atom 0, so 0 → 9.75 and
+/// 1 → 9 − 10 + 10 = 9 (total 0); 3 → (2, 2, 10.25), 4 → (2, 2, 1): wrap − (0, 0, 10) from atom 3,
+/// so 3 → 0.25 and 4 → 1 + 10 − 10 = 1 (total 0). Without the minimum image atoms 1 and 4 would be
+/// their own molecules and stay at 9.5 and 0.5 in frame 1.
 #[test]
 fn bonds_use_minimum_image() {
     let f1 = vec![
@@ -296,14 +305,70 @@ fn bonds_use_minimum_image() {
     ];
     let z = [0.0; 3];
     let x = [10.0, 0.0, 0.0];
+    let mx = [-10.0, 0.0, 0.0];
+    let pz = [0.0, 0.0, 10.0];
     let mz = [0.0, 0.0, -10.0];
     check_shifts(
         1,
         5,
         &[(0, f1), (1, f2)],
-        &[vec![z; 5], vec![x, x, z, mz, mz]],
+        &[vec![z, mx, z, z, pz], vec![x, z, z, mz, z]],
         &["--box-angstrom", "10"],
         "minimum-image bonds",
+    );
+}
+
+/// M9b test 2, Q40 item 3 (make-whole): a 3-atom chain split across the box in the first frame
+/// comes out whole; its middle atom is the one across the boundary, and its beads straddle it.
+/// P = 2, L = 4, bond 1.6. Frame 1 centroids: atom 0 x = 3.5 (beads 3.25, 3.75), atom 1 x = 0.5
+/// (beads −0.75, 1.75: the ring polymer straddles x = 0), atom 2 x = 1.75 (beads 1.5, 2); y = z = 2.
+/// Bonds (C-2): 0–1 d = −3 → 1.0; 1–2 d = 1.25; 0–2 d = −1.75 → 1.75 ≥ 1.6, no bond. Walk from 0:
+/// atom 1 from 0, k = −floor(−0.75 + 0.5) = 1, n_1 = +4; atom 2 from 1, d = 1.25, k = 0,
+/// n_2 = n_1 = +4 (relative to atom 0 instead: d = −1.75, k = 0, n_2 = 0, which would leave atom 2
+/// at 1.75). Totals (offset + wrap) per atom:
+/// - frame 1: wrap 0 (root 3.5): (0, +4, +4) → centroids 3.5, 4.5, 5.75; atom 1's beads 3.25, 5.75
+///   (per-bead images of the parent would give 3.25 and 1.75, splitting it).
+/// - frame 2: all + 1 in x; root 4.5 → wrap −4: totals (−4, 0, 0) → 0.5, 1.5, 2.75.
+/// - frame 3: the chain stretched (atom 1 at 1.75, beads 0.5, 3; atom 2 at 3, beads 2.75, 3.25;
+///   root at 3.5): offsets stay those of frame 1, totals (0, +4, +4). Offsets recomputed from this
+///   frame would give atom 1 d = −1.75, k = 0, offset 0.
+///
+/// With `--no-wrap`: no offsets and no wrap (positions as written).
+#[test]
+fn split_chain_made_whole() {
+    let f = |a0: [f64; 2], a1: [f64; 2], a2: [f64; 2]| {
+        vec![
+            r("C", a0[0], 2.0, 2.0),
+            r("C", a1[0], 2.0, 2.0),
+            r("C", a2[0], 2.0, 2.0),
+            r("C", a0[1], 2.0, 2.0),
+            r("C", a1[1], 2.0, 2.0),
+            r("C", a2[1], 2.0, 2.0),
+        ]
+    };
+    let frames = [
+        (1, f([3.25, 3.75], [-0.75, 1.75], [1.5, 2.0])),
+        (2, f([4.25, 4.75], [0.25, 2.75], [2.5, 3.0])),
+        (3, f([3.25, 3.75], [0.5, 3.0], [2.75, 3.25])),
+    ];
+    let z = [0.0; 3];
+    let x = [4.0, 0.0, 0.0];
+    let mx = [-4.0, 0.0, 0.0];
+    check_shifts(
+        2,
+        3,
+        &frames,
+        &[vec![z, x, x], vec![mx, z, z], vec![z, x, x]],
+        &["--box-angstrom", "4"],
+        "split chain",
+    );
+    check_shifts(
+        2,
+        3,
+        &frames,
+        &[vec![z; 3], vec![z; 3], vec![z; 3]],
+        &["--box-angstrom", "4", "--no-wrap"],
+        "split chain, --no-wrap",
     );
 }
 
@@ -730,14 +795,16 @@ fn error_every_zero() {
 // ---------------------------------------------------------------------------------------------
 
 /// Four neon atoms in a 12.5 Å box (P = 4, LJ as M4's BASE), placed so that centroids lie outside
-/// [0, L) from the start: atom 0 at x = −1 (shift +L in x), atom 2 at y = −1.5 (+L in y), atom 3 at
-/// z = 13 (−L in z). Minimum-image distances between atoms are ≥ 3.1 Å (0–1), the rest > 5 Å.
+/// [0, L) from the start: atom 2 at y = −1.5 (+L in y), atom 3 at z = 13 (−L in z). Atom 0 at
+/// x = 11.5 and atom 1 at x = 2.1 are 3.1 Å apart only under the minimum image, so with
+/// `--bond-angstrom 3.5` they form a molecule split across the box (atom 1 gets offset +L, Q40
+/// item 3). Minimum-image distances between atoms are ≥ 3.1 Å (0–1), the rest > 5 Å.
 const E2E: &str = r#"
 [system]
 n_atoms = 4
 mass_amu = 20.1797
 box_angstrom = 12.5
-positions_angstrom = [[-1.0, 6.0, 6.0], [2.1, 6.0, 6.0], [6.0, -1.5, 6.0], [9.0, 9.0, 13.0]]
+positions_angstrom = [[11.5, 6.0, 6.0], [2.1, 6.0, 6.0], [6.0, -1.5, 6.0], [9.0, 9.0, 13.0]]
 
 [potential]
 kind = "lj"
@@ -790,17 +857,20 @@ fn read_input(path: &Path, p: usize, n: usize) -> Vec<(u64, Vec<[f64; 3]>)> {
         .collect()
 }
 
-/// Independent checker (C-2, C-3 written here): molecules = connected components (BFS) of the
-/// first frame's centroids with minimum-image distance < `bond`; shift per molecule =
-/// −floor(c/L)·L of its lowest-index atom's centroid c. Returns per frame, per atom (centroid,
-/// shift).
+/// Independent checker (C-2, C-3, Q40 item 3 written here): molecules and make-whole offsets
+/// from the first frame's centroids by a FIFO breadth-first walk from each lowest-index unvisited
+/// atom, visiting bonded atoms (minimum-image distance < `bond`) in ascending index; a reached atom
+/// j gets its parent's offset plus −floor(d/L + 1/2)·L, d = c_j − c_parent. Wrap shift per
+/// molecule = −floor(c/L)·L of its root's centroid (root offset 0). Returns per frame, per atom
+/// (centroid, total shift = offset + wrap, offset).
+#[allow(clippy::type_complexity)]
 fn checker(
     frames: &[(u64, Vec<[f64; 3]>)],
     p: usize,
     n: usize,
     l: f64,
     bond: f64,
-) -> Vec<Vec<([f64; 3], [f64; 3])>> {
+) -> Vec<Vec<([f64; 3], [f64; 3], [f64; 3])>> {
     let cent = |x: &Vec<[f64; 3]>| -> Vec<[f64; 3]> {
         (0..n)
             .map(|i| {
@@ -816,20 +886,25 @@ fn checker(
     };
     let c0 = cent(&frames[0].1);
     let mi = |d: f64| d - l * (d / l + 0.5).floor();
-    let mut mol = vec![usize::MAX; n];
+    let mut root = vec![usize::MAX; n];
+    let mut off = vec![[0.0f64; 3]; n];
     for s in 0..n {
-        if mol[s] != usize::MAX {
+        if root[s] != usize::MAX {
             continue;
         }
-        mol[s] = s; // labelled by the lowest index, since s rises
-        let mut stack = vec![s];
-        while let Some(i) = stack.pop() {
+        root[s] = s;
+        let mut queue = std::collections::VecDeque::from([s]);
+        while let Some(i) = queue.pop_front() {
             for j in 0..n {
-                if mol[j] == usize::MAX {
+                if root[j] == usize::MAX {
                     let r2: f64 = (0..3).map(|d| mi(c0[j][d] - c0[i][d]).powi(2)).sum();
                     if r2.sqrt() < bond {
-                        mol[j] = s;
-                        stack.push(j);
+                        root[j] = s;
+                        for d in 0..3 {
+                            let k = -((c0[j][d] - c0[i][d]) / l + 0.5).floor();
+                            off[j][d] = off[i][d] + k * l;
+                        }
+                        queue.push_back(j);
                     }
                 }
             }
@@ -841,8 +916,9 @@ fn checker(
             let c = cent(x);
             (0..n)
                 .map(|i| {
-                    let first = c[mol[i]];
-                    (c[i], first.map(|v| -(v / l).floor() * l))
+                    let w = c[root[i]].map(|v| -(v / l).floor() * l);
+                    let o = off[i];
+                    (c[i], [o[0] + w[0], o[1] + w[1], o[2] + w[2]], o)
                 })
                 .collect()
         })
@@ -851,8 +927,9 @@ fn checker(
 
 /// M9b test 6, C-2, C-3: a short engine run (LJ, P = 4, periodic) exported with `--beads` and by
 /// default (centroids), with the default bond (every atom alone) and `--bond-angstrom 3.5` (atoms 0
-/// and 1, 3.1 Å apart, one molecule): the centroids of the bead output equal the centroid output
-/// to 1e-12 Å; both match the test's own checker (input + one shift per molecule) to 1e-12 Å.
+/// and 1, 3.1 Å apart across the box, one molecule made whole): the centroids of the bead output equal the centroid output
+/// to 1e-12 Å; both match the test's own checker (input + offset + one shift per molecule) to
+/// 1e-12 Å.
 #[test]
 fn end_to_end_engine_run() {
     let (p, n, l) = (4, 4, 12.5);
@@ -871,6 +948,7 @@ fn end_to_end_engine_run() {
     ] {
         let want = checker(&input, p, n, l, bond);
         let mut shifted = false;
+        let mut whole = false;
         let cen = read_extxyz(&convert(&[&traj], &d.path().join("c.extxyz"), &args));
         let mut ab = args.clone();
         ab.push("--beads");
@@ -883,8 +961,9 @@ fn end_to_end_engine_run() {
             assert_eq!(cen[f].rows.len(), n);
             assert_eq!(bead[f].rows.len(), p * n);
             for i in 0..n {
-                let (c, s) = want[f][i];
-                shifted |= s != [0.0; 3];
+                let (c, s, o) = want[f][i];
+                shifted |= s != o;
+                whole |= o != [0.0; 3];
                 let mut from_beads = [0.0; 3];
                 for j in 0..p {
                     let row = &bead[f].rows[j * n + i];
@@ -916,5 +995,10 @@ fn end_to_end_engine_run() {
             }
         }
         assert!(shifted, "test setup: some centroid must need a shift");
+        assert_eq!(
+            whole,
+            bond > 3.0,
+            "test setup: make-whole offsets only with bond 3.5"
+        );
     }
 }

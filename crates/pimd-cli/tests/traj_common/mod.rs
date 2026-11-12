@@ -27,6 +27,8 @@ use std::process::{Command, Output};
 /// 1.146 < 1.6 and |H−F| = |(0.75, 0.25, 0.5)| = 0.935 < 1.6; the closest cross pair (H at
 /// (2.25, 2.5, 3.25), H at (6.25, 7, 8)) is |(4, 4.5, 4.75)| ≫ 1.6. So {0, 1} and {2, 3}.
 ///
+/// Make-whole offsets (Q40 item 3) are all zero: both bonds are short without the minimum image.
+///
 /// Wrap shift per molecule = −floor(c/L)·L per component, c = centroid of the molecule's first
 /// atom (0 for A, 2 for B):
 /// - step 10: A (1.25, 2, 3) → 0; B (6.25, 7, 8) → 0.

@@ -15,60 +15,6 @@ Owner decision:
 Number new entries from Q41. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
 brief, it moves to the index below; the full text stays in git history.
 
-## Q40 (open) — Details pinned by the M9b `pimd-traj` tests
-Milestone: 9 (M9b)   Raised by: test author
-Spec text: MILESTONE_9 M9b "Command", "Wrapping", "Errors", required tests 1–6; SPEC C-2, C-3.
-Test or code: `crates/pimd-cli/tests/traj.rs`, `traj_common/mod.rs`, `long_traj_ase.rs`; stub `crates/pimd-cli/src/bin/pimd-traj.rs`
-What seems wrong / ambiguous: the brief leaves these open; the tests pin the choices below.
-1. **Output layout.** Line 2 is `step=<s>`, then ` Lattice="L 0 0 0 L 0 0 0 L" pbc="T T T"` (box given,
-   also with `--no-wrap`), then ` Properties=…`, single spaces, no trailing space; every line ends in
-   `\n`. L and coordinates use `{}` (L = 10 → `10`). Rows are `symbol x y z` or `symbol x y z bead`.
-   A centroid row takes the symbol of the atom's bead-0 row.
-2. **Wrap shift.** The shift is −floor(c/L)·L per component, an exact lattice vector, with c the
-   centroid of the molecule's lowest-index atom. It is applied to that molecule's beads and centroids.
-   The test 1–3 inputs are multiples of 0.25 Å with L = 10 Å, so centroids and shifts are exact in f64
-   whatever the summation order or shift formula. Test 6 compares to 1e-12 Å.
-3. **Molecules.** Molecules come from the first kept frame of the joined sequence and stay fixed.
-   An edge needs a C-2 distance strictly below `--bond-angstrom` (1.75 Å apart with
-   `--bond-angstrom 1.75` gives two molecules). Molecules are connected components, so chains count.
-   Taken literally, a molecule that is split across the box in the input (bonded only through the
-   minimum image) stays split: all of its atoms get the first atom's single shift. Test
-   `bonds_use_minimum_image` pins this; it is the only case where the minimum image changes the
-   result for an unwrapped input. Making such molecules whole would be a different rule (out of
-   scope as written).
-4. **`--every n`.** Frames are counted from 0 over the joined sequence, after restart drops. Index
-   0, n, 2n, … are kept. Counting per file is wrong (test `restart_joining_every`).
-5. **P and N.** The first frame fixes P and N. Any later frame with a different P or N is an error,
-   in a later file or later in the same file.
-6. **Error messages.** The message names the path as given (`Path::display`) and a 1-based line
-   number, as `line <k>` or `<path>:<k>`. The status is non-zero and not a panic (≠ 101). For
-   frame-level errors, the line may be the frame's count line or its header line: malformed header,
-   count ≠ P·N, non-increasing step, P/N mismatch. A malformed atom line names that line exactly.
-   A partial last frame in the last file may name its count line, its header line, the file's last
-   line or the line after it. With two bad lines, only the first is named. Line numbers count
-   within each file. `--box-angstrom` ≤ 0, `-0`, `inf`, `NaN` and `--every 0` must fail cleanly; the
-   message is not checked.
-7. **Malformed lines.** A malformed atom line is one without exactly four fields, with a
-   non-numeric coordinate, or empty. A malformed header is one missing `units=`, missing `step=`, or
-   with a non-numeric step or beads value. Whether other `units=` values, extra fields or non-finite
-   coordinates are errors is not tested.
-8. **Test 6, "`--centroids` output".** This is the default output (no flag). The command line in
-   "Command" has no `--centroids` flag, and none was added. The engine run goes through
-   `pimd_cli::run`, the library the `pimd-rs` binary calls (M4 "Binary" test). The test also checks
-   both outputs against the test's own checker of molecules and shifts, at the default bond and at
-   `--bond-angstrom 3.5`.
-9. **Test 4.** The test runs ASE from `.pixi/envs/ref/bin/python`, or `pixi run -e ref python` when
-   that file is absent, under the feature `long-validation`. ASE 3.29.0 and numpy 2.5.4 were used
-   when it was written. With a box, ASE must read cell diag(L, L, L) and pbc all true. Without one,
-   it must read a zero cell and pbc all false. Without `--beads` there is no `bead` array.
-10. **Stub.** The stub is binary-only: `[[bin]] pimd-traj` in `crates/pimd-cli/Cargo.toml` and
-    `src/bin/pimd-traj.rs`, clap arguments as in "Command", then `unimplemented!()`. No library API
-    was added. Argument types: `--every` is `usize`, `--box-angstrom` is `Option<f64>`,
-    `--bond-angstrom` is `f64` with default 1.6.
-Proposed resolution: accept 1–10 as pinned. On 3, if the owner wants split input molecules made
-whole, that needs a brief change and a new test commit.
-Owner decision:
-
 ## Resolved (index)
 
 Code and tests cite these numbers. Each decision now lives where the last column says.
@@ -114,3 +60,4 @@ Code and tests cite these numbers. Each decision now lives where the last column
 | Q37 | Details pinned by the M8a config tests (xyz parsing, error naming, hash as on 3e6a5bd, run.log echo, chunked run differs) | MILESTONE_8 M8a "Clarifications" |
 | Q38 | M9a test 2 uses a mixed-sign ≈1e6 eV E0 table; v2 float32 tolerance 2^-24·2^8·max(|E_int|, N eV) per bead; float64 row 1e-8 eV absolute | MILESTONE_9 M9a "Clarifications" |
 | Q39 | Details pinned by the M9a tests (determinism per thread count, machine-specific v1 bits, ±∞/missing E0 → `Backend`, stub bit equality, script refusal without traceback, test 6 forces) | MILESTONE_9 M9a "Clarifications" |
+| Q40 | Details pinned by the M9b tests (extxyz layout, wrap shift, molecules made whole once in the first kept frame by a BFS of minimum-image offsets, `--every` over the joined sequence, P/N fixed by the first frame, error naming, test 6 and 4 details, binary-only stub) | MILESTONE_9 M9b "Clarifications" |
