@@ -330,6 +330,159 @@ output was at 03:29; last checkpoint 03:09, production step 6 000. Restarted at 
 Downtime 03:29 – 10:36 (≈ 7.1 h) is not counted against the cap; the ≈ 20 min between the
 checkpoint and the crash is rerun. Projected GPU time for production ≈ 83 h.
 
+### 2026-11-12 04:53 P = 32 seed 2 finished; production complete
+
+Seed 8932 from `p1_last.xyz`: first leg 2026-11-10 10:40 – 2026-11-11 03:29 (16.8 h, 8 h of it
+slowed by the concurrent test above), second leg 65 792 s (1 935 ms per step over 34 000
+steps). The automatic health check after the run crashed: the first leg's `observables.csv`
+ended in a partial line written at the crash (step 6 571, past the checkpoint). `health.py` now
+skips malformed lines in `part<k>/` files only (they lie past the checkpoint and are dropped
+anyway). Then: 40 000 rows, 1 000 frames; centroids: largest NMA bond 1.115×, largest X–H
+1.215 Å, no transfer: ok (beads 1.320×, 1.444 Å). T_est 297.69 K, σ 0.026 K, offset −2.31 K
+against b_32 = −2.46 K: +5.8σ, inside 5σ + 0.5 K: ok. ⟨E_prim⟩ − ⟨E_vir⟩ = −8.61 × 10⁻⁵ Eh per
+atom against d_32 = −8.95 × 10⁻⁵ (σ_c 2.0 × 10⁻⁶): ok.
+
+GPU time for production: 1.2 + 6.7 + 13.3 + 26.8 + 35.1 ≈ 83 h (cap 100 h); downtime after the
+workstation restart not counted.
+
+### 2026-11-12 05:00 – 05:24 float64 re-evaluation (`reeval_f64.py`, GPU otherwise idle)
+
+50 frames per run, 4 450 bead evaluations in 28 min (`results/reeval_f64.json`). float32 −
+float64, Eh per atom (V̄; E_vir identical to 10⁻⁹ because the force term agrees):
+
+| run | mean | s.e. | s.d. over frames | σ(⟨V̄⟩) of the run | ratio |
+|---|---|---|---|---|---|
+| P = 1 | +5.214 × 10⁻⁶ | 6 × 10⁻⁸ | 4.3 × 10⁻⁷ | 1.57 × 10⁻⁵ | 0.33 |
+| P = 8 | +5.173 × 10⁻⁶ | 3 × 10⁻⁸ | 2.0 × 10⁻⁷ | 7.8 × 10⁻⁶ | 0.66 |
+| P = 16 | +5.190 × 10⁻⁶ | 2 × 10⁻⁸ | 1.3 × 10⁻⁷ | 1.14 × 10⁻⁵ | 0.45 |
+| P = 32 | +5.148 × 10⁻⁶ | 1 × 10⁻⁸ | 8 × 10⁻⁸ | 1.11 × 10⁻⁵ | 0.46 |
+| P = 32 seed 2 | +5.141 × 10⁻⁶ | 1 × 10⁻⁸ | 8 × 10⁻⁸ | 2.4 × 10⁻⁵ | 0.22 |
+
+The Q4 criterion as written (ratio < 1/5) fails at every P. The difference is a constant
+offset: 3.4 × 10⁻³ Eh (0.093 eV) for the whole box, the size of test 7's float32 error, and it
+changes by at most 7 × 10⁻⁸ Eh per atom between P = 1 and P = 32, far below every σ_c, so it
+cancels in every difference between runs. Per the plan, the export follow-up (decision 6) is
+proposed and absolute energies are reported with the measured correction (−5.17 × 10⁻⁶ Eh per
+atom, −1.57 × 10⁻⁵ Eh per molecule). The test at 15:26 on 2026-11-10 that crawled for 8 h ran
+in under a minute here: the slowdown was the memory spill alone.
+
+### 2026-11-12 Analysis runs; coordination-number cutoffs fixed
+
+`analyse.py` on all five runs (≈ 15 min, CPU). First pass integrated each coordination number to
+that run's own first minimum, which moves by up to 0.2 Å between runs (water g_OO: 3.575 Å at
+P = 1, 3.775 Å at P = 8, CN 5.60 against 6.68), so CNs did not compare. Changed to one cutoff
+per RDF for every run, the P = 1 minima rounded to 0.05 Å (O_NMA–H_w 2.6, O_NMA–O_w 3.5,
+H_N–O_w 2.6, N–O_w 3.4, O_w–O_w 3.55, O_w–H_w 2.45 Å). Added the spread of ω about trans (Q2).
+Reproducibility: the two P = 32 seeds agree on every reported observable (largest |z| 2.24,
+r_CN); no production-half difference reaches 5σ_c (largest 4.74, P = 1 C=O···H count at 20°;
+the C=O H-bond counts are the slowest observables, 3.2–4.7σ at P = 1 and P = 8).
+
 ## Writeup
 
-(after the analysis)
+Five PIMD runs of NMA + 216 waters with MACE-OFF23 small (float32, CUDA), 300 K, Δt = 0.5 fs,
+20 ps of production each: P = 1, 8, 16 and two P = 32 seeds (log, 2026-11-07 to 2026-11-12).
+Numbers below are from `results/summary.json` and `results/comparisons.csv` (`analyse.py`);
+"P = 32" is the mean of the two seeds (σ = ½√(σ₁² + σ₂²)); σ_c is the combined σ of a
+difference. Figures: `results/rdf_p1_p32.png`, `results/nh_omega_vs_p.png`,
+`results/evir_vs_invp2.png`.
+
+### Run health and what changed in the plan
+
+All five runs pass the run-health criteria as amended twice during the study (log, 2026-11-08):
+the bond and transfer limits apply to bead centroids (no transfer in any run; largest centroid
+X–H 1.216 Å), and T_est and ⟨E_prim⟩ − ⟨E_vir⟩ are judged against the predicted BAOAB step-size
+bias at Δt = 0.5 fs (T_est −2.2 to −2.3 K at every P; ⟨E_prim⟩ − ⟨E_vir⟩ −8.8 × 10⁻⁶,
+−3.2 × 10⁻⁵, −8.4 to −8.6 × 10⁻⁵ Eh per atom at P = 8, 16, 32, each within 12 % of the
+harmonic prediction). The criteria as first written failed for those reasons, not for a defect:
+a per-bead bond limit is a classical criterion, and the two energy checks had no step-size
+allowance. The two P = 32 seeds agree on every observable (largest |z| 2.2); no production-half
+difference reaches 5σ_c (largest 4.7, the C=O···H count at P = 1).
+
+### Q1, solute–solvent hydrogen bonds: mostly not resolved
+
+| observable | P = 1 | P = 32 | difference | z |
+|---|---|---|---|---|
+| O_NMA–H_w first peak height | 1.88 ± 0.13 | 1.73 ± 0.05 | −0.16 | −1.1 |
+| O_NMA–H_w first peak position (Å) | 1.832 ± 0.027 | 1.796 ± 0.013 | −0.036 | −1.2 |
+| H_N–O_w first peak height | 0.78 ± 0.17 | 0.79 ± 0.07 | +0.01 | 0.0 |
+| H_N–O_w first peak position (Å) | 2.03 ± 0.13 | 2.01 ± 0.11 | −0.02 | −0.1 |
+| O_NMA–O_w first peak position (Å) | 2.825 ± 0.022 | 2.747 ± 0.010 | −0.078 | −3.2 |
+| C=O···H–O_w count per frame | 2.53 ± 0.13 | 2.24 ± 0.07 | −0.28 (−11 %) | −1.9 |
+| C=O···H distance (Å) | 1.957 ± 0.012 | 1.903 ± 0.011 | −0.054 | −3.5 |
+| N–H···O_w count per frame | 0.66 ± 0.13 | 0.73 ± 0.05 | +0.07 | 0.5 |
+| water g_OO first peak height | 2.852 ± 0.020 | 2.672 ± 0.017 | −0.180 | −6.7 |
+| water g_OH first peak height | 1.323 ± 0.013 | 1.153 ± 0.010 | −0.170 | −10.3 |
+
+- *Site RDF peaks lower and broader beyond 5σ*: **not resolved** (|z| ≤ 1.2 for both sites).
+- *Peak positions move by less than 0.05 Å*: **not shown** (|d| + 2σ_c = 0.10 and 0.36 Å).
+- *H-bond counts change by less than 10 %*: **not shown** (C=O −11 ± 6 %, N–H +11 ± 22 %).
+- *Water g_OO first peak lower at P = 32*: **holds** (2.85 → 2.67, −6.7σ_c; test 8 at 64 waters,
+  i-PI: 2.63 → 2.50). The water g_OH H-bond peak drops more (−13 %, −10σ_c).
+
+The solute signals that come closest are a shorter carbonyl hydration shell (O_NMA–O_w peak
+−0.08 Å, C=O···H −0.05 Å, both 3–3.5σ_c) — the same direction as the water–water g_OH shift.
+The limit is sampling, not P: one solute gives 1 000 frames of one acceptor and one donor per
+run, the H-bond counts are the slowest observables (halves differ by 3–4.7σ at P = 1 and 8),
+and σ of a single-site peak height is 5–15× that of the water–water one. Resolving 10 %
+changes in the solute H-bond counts at 5σ needs about 10× the sampling (longer runs or several
+solutes).
+
+### Q2, solute geometry
+
+| observable | P = 1 | P = 8 | P = 16 | P = 32 | P = 32 − P = 1 |
+|---|---|---|---|---|---|
+| ⟨r_NH⟩ (Å) | 1.0116 ± 0.0013 | 1.0252 ± 0.0015 | 1.0248 ± 0.0008 | 1.0275 ± 0.0011 | +0.0159 ± 0.0017 (9.1σ) |
+| s.d. r_NH (Å) | 0.0232 ± 0.0010 | 0.0603 ± 0.0004 | 0.0676 ± 0.0005 | 0.0707 ± 0.0004 | ×3.05 |
+| ⟨r_CO⟩ (Å) | 1.2489 ± 0.0021 | 1.2512 | 1.2480 | 1.2507 ± 0.0016 | +0.0018 ± 0.0025 |
+| ⟨r_CN⟩ (Å) | 1.3323 ± 0.0014 | 1.3346 | 1.3419 | 1.3384 ± 0.0011 | +0.0061 ± 0.0018 |
+| trans fraction (\|ω\| > 150°) | 0.998 | 0.998 | 0.999 | 0.998 | 0.000 |
+| s.d. of ω about trans (°) | 10.0 ± 0.5 | 10.4 ± 0.4 | 9.8 ± 0.3 | 9.9 ± 0.4 | −0.2σ |
+
+- *⟨r_NH⟩ +0.01–0.03 Å*: **holds** (+0.016 ± 0.002 Å).
+- *N–H distribution about twice as wide*: **does not hold**; it is 3.05 ± 0.14 times as wide.
+- *C=O and C–N shift by less than 0.01 Å*: **holds** (+0.002 and +0.006 Å; |d| + 2σ_c 0.007 and
+  0.0096 Å, the latter only just).
+- *Trans in more than 99 % of samples at every P*: **holds** (≥ 99.7 %).
+- *Wider ω distribution at P = 32*: **does not hold** (9.9 ± 0.4° against 10.0 ± 0.5°).
+
+### Q3, convergence in P
+
+Structural observables: P = 16 and P = 32 agree within 5σ_c on every one (largest |z|: s.d.
+r_NH 4.8, water g_OH peak position −4.3), so the **structure hypothesis holds**, though the N–H
+spread is still growing at P = 16 (0.0676 → 0.0707 Å). Of the structural observables only the N–H spread
+differs between P = 8 and P = 32 beyond 5σ_c (0.0603 against 0.0707 Å, −17σ_c).
+
+Energies, ⟨E_vir⟩ − ⟨E_vir⟩(P = 1) per molecule: 0.01403 (P = 8), 0.01760 (P = 16), 0.01899
+(P = 32), σ_c ≈ 6 × 10⁻⁵ Eh. P = 8 reproduces test 8 (0.0140 at 64 waters). P = 8 is **not
+converged** (holds). From P = 16 to P = 32 ⟨E_vir⟩ moves by 0.00140 ± 0.00005 Eh, 7.4 % of the
+quantum−classical difference: more than "a few per cent". The increments shrink by 2.6× per
+doubling of P, not the 4× of a 1/P² tail, so the P → ∞ estimate lies between 0.0195 (1/P²
+from P = 16, 32) and 0.0204 Eh (1/P) per molecule. The predicted step-size bias of E_vir
+(+0.3 to +0.8 × 10⁻⁴ Eh per molecule at P = 8–32) changes these differences by ≤ 0.5 %.
+
+### Q4, float32 energies
+
+The float32 − float64 difference is a constant +5.15 to +5.21 × 10⁻⁶ Eh per atom (0.093 eV for
+the box) at every P, with 1 × 10⁻⁸ to 6 × 10⁻⁸ s.e. (log, 2026-11-12 05:00). Against the
+criterion as written (< σ/5 of the run) it **fails** at every P (0.22–0.66 σ). It moves by
+< 7 × 10⁻⁸ Eh per atom between P = 1 and P = 32, so every quantum−classical difference above is
+unaffected; absolute energies carry the correction −1.57 × 10⁻⁵ Eh per molecule. Per the plan,
+the export follow-up of decision 6 is proposed (below).
+
+### Q5, throughput
+
+72.1, 481.8, 963.2, 1 930.7 and 1 935.1 ms per step at P = 1, 8, 16, 32, 32 against the
+projection 76, 487, ≈ 975, 1 967: −5 % to −1 %, **holds**. Production used ≈ 83 h of GPU time
+(cap 100 h), including ≈ 7 h lost to the concurrent-GPU breach (log, 2026-11-10).
+
+### Proposals (owner decision)
+
+1. **float32 export offset** (decision 6 follow-up): a normal milestone to find the source of the
+   constant +0.09 eV per box (float64 export run in float32) and to remove it or document it.
+2. **Integrator step-size bias growing with P**: BAOAB with exact free ring-polymer propagation
+   biases ⟨E_prim⟩ (−6 × 10⁻⁵ Eh per atom at P = 32) and, less, ⟨E_vir⟩. A Cayley-modified
+   free propagator (BCOCB) would remove the P growth; a candidate milestone, not needed for the
+   conclusions here.
+3. **More solute sampling** if Q1 matters: the solute H-bond questions need ≈ 10× the
+   statistics.
+4. The MACE-OFF23 medium model check stays on hold.
