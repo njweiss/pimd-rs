@@ -78,9 +78,9 @@ impl<'a> Reader<'a> {
         })
     }
 
-    /// The next line's 1-based number and text without its line ending, or `None` at end of
-    /// file.
-    fn next_line(&mut self) -> Result<Option<(usize, &str)>, String> {
+    /// The next line's 1-based number, its text without the line ending, and whether it is the
+    /// file's last line; `None` at end of file.
+    fn next_line(&mut self) -> Result<Option<(usize, &str, bool)>, String> {
         self.buf.clear();
         let read = self
             .inner
@@ -90,7 +90,16 @@ impl<'a> Reader<'a> {
             return Ok(None);
         }
         self.line += 1;
-        Ok(Some((self.line, self.buf.trim_end_matches(['\n', '\r']))))
+        let end = self
+            .inner
+            .fill_buf()
+            .map_err(|e| at(self.path, self.line + 1, e))?
+            .is_empty();
+        Ok(Some((
+            self.line,
+            self.buf.trim_end_matches(['\n', '\r']),
+            end,
+        )))
     }
 }
 
@@ -132,13 +141,21 @@ fn parse_header(line: &str) -> Result<(u64, usize, usize), String> {
     }
 }
 
-/// The step of a file's first frame, if its first two lines hold a readable header. Errors are
-/// left for the full read of that file, so they are reported in reading order.
-fn first_step(path: &Path) -> Option<u64> {
-    let mut r = Reader::open(path).ok()?;
-    r.next_line().ok()??;
-    let (_, header) = r.next_line().ok()??;
-    parse_header(header).ok().map(|h| h.0)
+/// The first step of the first of `paths` that has a complete first header (a header line
+/// followed by more lines; files without one hold no frames, F2), if that header is readable.
+/// Errors are left for the full read of that file, so they are reported in reading order.
+fn next_first_step(paths: &[PathBuf]) -> Option<u64> {
+    for path in paths {
+        let mut r = Reader::open(path).ok()?;
+        if r.next_line().ok()?.is_none() {
+            continue;
+        }
+        match r.next_line().ok()? {
+            Some((_, header, false)) => return parse_header(header).ok().map(|h| h.0),
+            _ => continue,
+        }
+    }
+    None
 }
 
 /// Minimum-image displacement component (C-2): the result lies in [−L/2, L/2).
@@ -198,25 +215,33 @@ struct Frame {
     pos: Vec<[f64; 3]>,
 }
 
-/// Reads the P·N atom lines of a frame into `f`. `Ok(false)` at a premature end of file.
-fn read_rows(r: &mut Reader, f: &mut Frame) -> Result<bool, String> {
+/// Atom line `symbol x y z` with finite coordinates (F6).
+fn parse_row(line: &str) -> Option<(&str, [f64; 3])> {
+    let mut t = line.split_whitespace();
+    let sym = t.next()?;
+    let mut x = [0.0; 3];
+    for v in &mut x {
+        *v = t.next()?.parse().ok().filter(|v: &f64| v.is_finite())?;
+    }
+    t.next().is_none().then_some((sym, x))
+}
+
+/// Reads the P·N atom lines of a frame into `f`. `Ok(false)` at a premature end of file, or, with
+/// `cut_ok` (a file other than the last, F1), when the file's last line is malformed (a cut line).
+fn read_rows(r: &mut Reader, f: &mut Frame, cut_ok: bool) -> Result<bool, String> {
     let rows = f.p * f.n;
     f.pos.clear();
     for k in 0..rows {
         let path = r.path;
-        let Some((lineno, line)) = r.next_line()? else {
+        let Some((lineno, line, end)) = r.next_line()? else {
             return Ok(false);
         };
-        let mut t = line.split_whitespace();
-        let bad = || at(path, lineno, format!("malformed atom line {line:?}"));
-        let sym = t.next().ok_or_else(bad)?;
-        let mut x = [0.0; 3];
-        for v in &mut x {
-            *v = t.next().and_then(|s| s.parse().ok()).ok_or_else(bad)?;
-        }
-        if t.next().is_some() {
-            return Err(bad());
-        }
+        let Some((sym, x)) = parse_row(line) else {
+            if cut_ok && end {
+                return Ok(false);
+            }
+            return Err(at(path, lineno, format!("malformed atom line {line:?}")));
+        };
         // Symbol strings are reused from frame to frame.
         match f.syms.get_mut(k) {
             Some(s) => {
@@ -230,6 +255,8 @@ fn read_rows(r: &mut Reader, f: &mut Frame) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Checks the options, then writes the output; on an error after the output file was created,
+/// removes it (F4).
 fn convert(a: &Args) -> Result<(), String> {
     if a.every == 0 {
         return Err("--every must be at least 1".into());
@@ -241,9 +268,37 @@ fn convert(a: &Args) -> Result<(), String> {
             "--box-angstrom must be positive and finite, got {l}"
         ));
     }
+    if !(a.bond_angstrom.is_finite() && a.bond_angstrom > 0.0) {
+        return Err(format!(
+            "--bond-angstrom must be positive and finite, got {}",
+            a.bond_angstrom
+        ));
+    }
+    // F3: an output that does not exist yet cannot be an input.
+    if let Ok(out) = a.out.canonicalize()
+        && let Some(p) = a
+            .inputs
+            .iter()
+            .find(|p| p.canonicalize().is_ok_and(|c| c == out))
+    {
+        return Err(format!(
+            "--out {} is the input {}",
+            a.out.display(),
+            p.display()
+        ));
+    }
+    let file = File::create(&a.out).map_err(|e| format!("{}: {e}", a.out.display()))?;
+    let result = write_all(a, BufWriter::new(file));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&a.out);
+    }
+    result
+}
+
+/// Streams the inputs into `w` (restart joining, `--every`, wrapping).
+fn write_all(a: &Args, mut w: BufWriter<File>) -> Result<(), String> {
     let wrap_box = a.box_angstrom.filter(|_| !a.no_wrap);
     let out_err = |e: std::io::Error| format!("{}: {e}", a.out.display());
-    let mut w = BufWriter::new(File::create(&a.out).map_err(out_err)?);
 
     let mut frame = Frame {
         step: 0,
@@ -260,22 +315,24 @@ fn convert(a: &Args) -> Result<(), String> {
 
     for (fi, path) in a.inputs.iter().enumerate() {
         let last = fi + 1 == a.inputs.len();
-        let limit = if last {
-            None
-        } else {
-            first_step(&a.inputs[fi + 1])
-        };
+        let limit = next_first_step(&a.inputs[fi + 1..]);
         let mut r = Reader::open(path)?;
         let mut prev_step: Option<u64> = None;
-        while let Some((count_line, count)) = r.next_line()? {
+        while let Some((count_line, count, _)) = r.next_line()? {
             let count: Option<usize> = count.trim().parse().ok();
             let partial = || at(path, count_line, "incomplete last frame");
-            let Some((header_line, header)) = r.next_line()? else {
-                if last {
+            let first_in_file = prev_step.is_none();
+            let Some((header_line, header, end)) = r.next_line()? else {
+                if last && !first_in_file {
                     return Err(partial());
                 }
                 break;
             };
+            // A frame cut at or inside its header line: dropped in a file other than the last
+            // (F1); a file without a complete first header holds no frames (F2).
+            if end && (first_in_file || !last) {
+                break;
+            }
             let count = count.ok_or_else(|| at(path, count_line, "malformed count line"))?;
             let (step, p, n) = parse_header(header).map_err(|e| at(path, header_line, e))?;
             if count != p * n {
@@ -310,7 +367,7 @@ fn convert(a: &Args) -> Result<(), String> {
                 break;
             }
             (frame.step, frame.p, frame.n) = (step, p, n);
-            if !read_rows(&mut r, &mut frame)? {
+            if !read_rows(&mut r, &mut frame, !last)? {
                 if last {
                     return Err(partial());
                 }
