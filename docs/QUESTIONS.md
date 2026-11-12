@@ -15,6 +15,57 @@ Owner decision:
 Number new entries from Q38. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
 brief, it moves to the index below; the full text stays in git history.
 
+## Q38 (open) — M9a test 2: same-sign large E0 cannot give a 10-ulp v1 offset on the tiny systems
+Milestone: 9a   Raised by: test author
+Spec text: MILESTONE_9 test 2: "a tiny model generated with E0 values large enough that the v1
+float32 energy misses the float64 energy by ≥ 10 float32 ulp of |E|."
+Test or code: crates/pimd-torch/tests/data/gen_tiny_mace_v2.py (`BIG_E0`),
+crates/pimd-torch/tests/v2_float32_offset.rs
+What seems wrong / ambiguous: with E0 values of one sign, |E| ≈ Σ|E0|, so one float32 ulp of |E|
+grows with the E0 values; for the 3- to 12-atom reference systems the float32 E0 table rounding plus
+the float32 sum stays below about 1 ulp of |E| however large E0 is (M8b needed 660 atoms for 3 ulp).
+Decision taken: mixed signs, H +1000000.03, C −2000000.05, N −1500000.3, O −2002069.23 eV, so
+water and ethanol total ≈ −2070 eV and the 4-water box ≈ −8282 eV while every term and partial sum
+is ≈ 1e6 eV (float32 ulp 0.0625 eV). The generator measures the v1 float32 offset at ≥ 327 ulp
+(water, box) and ≥ 614 ulp (ethanol) and fails below 10. Measured with the throwaway reference:
+v1 float32 |ΔE| = 0.080 / 0.150 / 0.320 eV (water / ethanol / box); v2 float32 |ΔE| ≤ 4.4e-7 eV.
+Derived tolerance for v2 float32 (stated in the test): 2^-24·2^8·max(|E_int,j|, N·1 eV) per bead
+(4.6e-5 eV water, 1.4e-4 eV ethanol, 1.8e-4 eV box), with E_int,j = E_ref,j − Σ E0_tiny(Z_i) from
+mace_ref.json. The float64 v2 row uses 1e-8 eV absolute rather than 1e-12·|E| (f64 rounding of
+partial sums of size 6e6 eV: measured 5e-10 eV, 1e-12·|E| = 2e-9 eV, too close).
+Proposed resolution: accept the mixed-sign table and the tolerance.
+Owner decision:
+
+## Q39 (open) — M9a details pinned by the tests
+Milestone: 9a   Raised by: test author
+Spec text: MILESTONE_9 "Export interface v2", "Adapter", tests 3–5.
+Test or code: crates/pimd-torch/tests/{v1_unchanged,v2_load_errors,v2_e0_sum,v2_determinism,
+export_script_v2}.rs
+What seems wrong / ambiguous: decisions taken, for the owner to confirm:
+1. Test 5 "threads 1 and 4 bitwise" is read as in the M6/M8a determinism tests: at libtorch threads
+   1, and at 4, repeated calls, rayon pools of 1 and 4 and a reload give the same bits (D-3 does not
+   promise equality between libtorch thread counts for a real model). For a stub export whose
+   interaction energy is a constant, threads 1 and 4 must also agree bitwise with each other, and
+   every bead and chunk size gives the same bits.
+2. Test 3 records main's bits (aa3fe6d) on this workstation, libtorch threads 1: per-bead energy bit
+   patterns and an FNV-1a of the force bits, for water, ethanol, the box (also c = 3), float64 and
+   float32. On another CPU or libtorch build they must be re-recorded with main's code.
+3. A v2 export without `atomic_energies()`, or with ±∞ in it, is `Backend` at load (the brief names
+   a length mismatch and NaN).
+4. With the stub (interaction energy 0.375 eV, exact in float32), float32 energies must be bitwise
+   equal to float64 energies, and the energy must be (E_int + Σ E0)/27.211386245988 to 1e-14
+   relative (the conversion may be applied per term or to the sum).
+5. export_mace.py: the refusal of a model without `atomic_energies_fn` exits non-zero, writes no
+   file and names `atomic_energies_fn` on stderr without a Python traceback (a refusal, not
+   a crash); `--interface 1` output is bitwise equal through
+   the adapter to the locked `tiny_mace_f64.pt`; a float32 export's `atomic_energies()` is float64
+   with the exact E0 values. The refusal of a model "whose outputs lack interaction_energy" is not
+   tested: the pickled test model would need a class importable by the script.
+6. Test 6 also checks forces against the M8a 1e-10·max|F| in the float64 row, and asserts that the
+   default export reports `interface_version()` = 2.
+Proposed resolution: confirm 1–6.
+Owner decision:
+
 ## Resolved (index)
 
 Code and tests cite these numbers. Each decision now lives where the last column says.

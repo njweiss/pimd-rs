@@ -1,0 +1,120 @@
+{
+ "versions": {
+  "torch": "2.13.0",
+  "mace-torch": "0.3.17",
+  "e3nn": "0.4.4",
+  "numpy": "2.5.4",
+  "python": "3.12.16",
+  "sha256_tiny_mace.model": "33971bf0c808938e68f3cf19866e848b030510ca21f9a15fbce4d45c4465578c",
+  "sha256_tiny_mace_v2_f64.pt": "d385e3d7a2992e12405ececfffde80766c8d6002a1386a3d60cf5ba3d25565f0",
+  "sha256_tiny_mace_bige0_v1_f64.pt": "4dab3aad196ce61b89c0e573537a27ac3cd3da82264071aa080dd4e315aadc81",
+  "sha256_tiny_mace_bige0_v2_f64.pt": "88b42be75cfc8de23723931630210979effb7982e7d3b586dfcb607d97ad954d",
+  "sha256_stub_v2_ok.pt": "ecbe105f77a1926a73312f07f9228fa1ab62d447330c5c55dcff519dd1f6e51a",
+  "sha256_stub_v2_len.pt": "b2cf98fe48f0e323ca5877d0301cba1942a45bcbca361e8992c31893de744d2d",
+  "sha256_stub_v2_nan.pt": "c3be8a510d3de134b7ee3e4702de48e46dfb8fdd55afd6f6c56e4b420dceaeb2",
+  "sha256_stub_v2_inf.pt": "23eed6fd1bed6a4f2dbb99db9ff627fc23ac0ca386368e480200dd4cfec43b6a",
+  "sha256_stub_v2_ver3.pt": "bdb062a2dfad62dfcffdaf1c530dd050b8062fc7ae347d64999077a8ffc1ce9d",
+  "sha256_stub_v2_noe0.pt": "8bb153c6ff3e868bc1c33d1fbf1fc311065ac6063feedbcc3374256579ac00f8"
+ },
+ "atomic_numbers": [
+  1,
+  6,
+  7,
+  8
+ ],
+ "tiny_e0_ev": [
+  -13.6,
+  -1029.0,
+  -1485.0,
+  -2042.0
+ ],
+ "big_e0_ev": [
+  1000000.03,
+  -2000000.05,
+  -1500000.3,
+  -2002069.23
+ ],
+ "tiny_parameters": {
+  "n_parameters": 2896,
+  "sum": 15.828646206604944,
+  "sum_abs": 2240.351400975733,
+  "sum_sq": 2806.120909066473
+ },
+ "stub": {
+  "atomic_numbers": [
+   8,
+   1,
+   6,
+   7
+  ],
+  "e0_ev": [
+   -2042.123456789,
+   -13.587654321,
+   -1029.314159265,
+   -1485.271828183
+  ],
+  "interaction_energy_ev": 0.375,
+  "r_max_angstrom": 5.0,
+  "variants": {
+   "stub_v2_ok": {
+    "version": 2,
+    "e0_ev": [
+     -2042.123456789,
+     -13.587654321,
+     -1029.314159265,
+     -1485.271828183
+    ]
+   },
+   "stub_v2_len": {
+    "version": 2,
+    "e0_ev": [
+     -2042.123456789,
+     -13.587654321,
+     -1029.314159265
+    ]
+   },
+   "stub_v2_nan": {
+    "version": 2,
+    "e0_ev": [
+     -2042.123456789,
+     "nan",
+     -1029.314159265,
+     -1485.271828183
+    ]
+   },
+   "stub_v2_inf": {
+    "version": 2,
+    "e0_ev": [
+     -2042.123456789,
+     -13.587654321,
+     -1029.314159265,
+     "-inf"
+    ]
+   },
+   "stub_v2_ver3": {
+    "version": 3,
+    "e0_ev": [
+     -2042.123456789,
+     -13.587654321,
+     -1029.314159265,
+     -1485.271828183
+    ]
+   },
+   "stub_v2_noe0": {
+    "version": 2,
+    "e0_ev": null
+   }
+  }
+ },
+ "bige0_premise": {
+  "water": {
+   "min_v1_f32_offset_ulp": 327.4343339391053
+  },
+  "ethanol": {
+   "min_v1_f32_offset_ulp": 614.2158841118217
+  },
+  "waterbox": {
+   "min_v1_f32_offset_ulp": 327.29259880259633
+  }
+ }
+}
