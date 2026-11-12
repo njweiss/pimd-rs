@@ -89,12 +89,14 @@ impl MacePotential {
     /// A v2 export (`interface_version()` = 2) returns the interaction energy; its reference
     /// energies `atomic_energies()` (eV, float64, one per species) are read before any cast to
     /// float32, and Σ_i E0(Z_i) over the N atoms, summed in f64 in atom order, is added to every
-    /// bead's energy. An export without `interface_version()` is v1: its energy is used as
-    /// returned (P-6).
+    /// bead's energy. An export without `interface_version()` (and without `atomic_energies()`)
+    /// is v1: its energy is used as returned (P-6).
     ///
     /// Errors: missing or invalid file, or a module that is not an export -> `Backend`;
-    /// `interface_version()` other than 2, or a v2 export whose `atomic_energies()` is missing,
-    /// not of the length of `atomic_numbers()` or not finite -> `Backend`;
+    /// `interface_version()` other than 2 (1 included), `atomic_energies()` without
+    /// `interface_version()`, or a v2 export whose `atomic_energies()` is missing, not of the
+    /// length of `atomic_numbers()` or not finite, or whose E0 sum over the atoms is not finite
+    /// -> `Backend`;
     /// a float32 export with `Dtype::F64` -> `Backend` (Q27); a libtorch error (or panic) while
     /// casting the model to float32 -> `Backend`;
     /// an atomic number the model does not know -> `InvalidParameter { what: "atomic number" }`;
@@ -184,8 +186,16 @@ impl MacePotential {
             .collect::<Result<Vec<i64>, PotentialError>>()?;
         // Interface v2 (P-6): read the E0 table before any cast to float32 (which would round it).
         let e0_sum = match module.method_is::<IValue>("interface_version", &[]) {
-            // No interface_version(): a v1 export.
-            Err(_) => None,
+            // No interface_version(): a v1 export, unless it has an E0 table (then it is neither).
+            Err(_) => {
+                if module.method_ts::<Tensor>("atomic_energies", &[]).is_ok() {
+                    return Err(PotentialError::Backend(
+                        "atomic_energies() without interface_version(): not a v1 or v2 export"
+                            .to_string(),
+                    ));
+                }
+                None
+            }
             Ok(IValue::Int(2)) => {
                 let e0: Vec<f64> = module
                     .method_ts::<Tensor>("atomic_energies", &[])
@@ -211,6 +221,11 @@ impl MacePotential {
                 let mut sum_ev = 0.0;
                 for &s in &species {
                     sum_ev += e0[s as usize];
+                }
+                if !sum_ev.is_finite() {
+                    return Err(PotentialError::Backend(format!(
+                        "sum of atomic_energies() over the atoms is not finite ({sum_ev} eV)"
+                    )));
                 }
                 Some(sum_ev / HARTREE_IN_EV)
             }
