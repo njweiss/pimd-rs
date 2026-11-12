@@ -1,6 +1,6 @@
 # Milestone 9: float64 reference energies for float32 MACE; trajectory export for viewers
 
-Status: **draft (2026-11-12), awaiting owner approval.** Two independent engine phases, each A/B/C:
+Status: **brief approved (owner, 2026-11-12)**; decisions 1–3 confirmed. M9a tests next. Two independent engine phases, each A/B/C:
 
 | Phase | Flow | Output |
 | --- | --- | --- |
@@ -35,7 +35,7 @@ M1–M8 merged. Relevant to M9:
 - The existing export `crates/pimd-torch/tests/data/tiny_mace_f64.pt` is locked test data (v1
   interface) and must keep loading with bitwise-unchanged results.
 
-## Decisions (owner, to confirm with this brief)
+## Decisions (owner, 2026-11-12)
 
 1. **The integrator is not in M9.** The M8b writeup's proposal 2 claimed that a Cayley free
    propagator (BCOCB) would remove the P growth of the BAOAB step-size bias. The harmonic desk
@@ -222,7 +222,7 @@ sampling; electrostatics; NPT.
 
 ## Acceptance
 
-- [ ] Owner approves this brief, decisions 1–3, the P-6 sentence and the `pimd-traj` command line
+- [x] Owner approves this brief, decisions 1–3, the P-6 sentence and the `pimd-traj` command line
 - [ ] M9a: all tests pass; `check.sh` and `CHECK_TORCH=1` exit 0; long validation passes; review
       done with no blocking findings; `QUESTIONS.md` has no open entries
 - [ ] M9b: the same
