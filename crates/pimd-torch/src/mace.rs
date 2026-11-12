@@ -73,6 +73,9 @@ pub struct MacePotential {
     constants: Vec<Constants>,
     /// Beads per graph c set by `with_beads_per_graph`; `None` = all beads in one graph (P-6).
     beads_per_graph: Option<usize>,
+    /// v2 export: Σ_i E0(Z_i) over the N atoms (Eh), added to every bead's interaction energy;
+    /// `None` for a v1 export, whose energy is used as returned (P-6).
+    e0_sum: Option<f64>,
 }
 
 impl MacePotential {
@@ -83,7 +86,15 @@ impl MacePotential {
     /// `deterministic`. A failed load leaves them unchanged. libtorch keeps the thread count per
     /// OS thread, so `evaluate` applies `threads` again on its calling thread (P-6).
     ///
+    /// A v2 export (`interface_version()` = 2) returns the interaction energy; its reference
+    /// energies `atomic_energies()` (eV, float64, one per species) are read before any cast to
+    /// float32, and Σ_i E0(Z_i) over the N atoms, summed in f64 in atom order, is added to every
+    /// bead's energy. An export without `interface_version()` is v1: its energy is used as
+    /// returned (P-6).
+    ///
     /// Errors: missing or invalid file, or a module that is not an export -> `Backend`;
+    /// `interface_version()` other than 2, or a v2 export whose `atomic_energies()` is missing,
+    /// not of the length of `atomic_numbers()` or not finite -> `Backend`;
     /// a float32 export with `Dtype::F64` -> `Backend` (Q27); a libtorch error (or panic) while
     /// casting the model to float32 -> `Backend`;
     /// an atomic number the model does not know -> `InvalidParameter { what: "atomic number" }`;
@@ -171,6 +182,44 @@ impl MacePotential {
                     })
             })
             .collect::<Result<Vec<i64>, PotentialError>>()?;
+        // Interface v2 (P-6): read the E0 table before any cast to float32 (which would round it).
+        let e0_sum = match module.method_is::<IValue>("interface_version", &[]) {
+            // No interface_version(): a v1 export.
+            Err(_) => None,
+            Ok(IValue::Int(2)) => {
+                let e0: Vec<f64> = module
+                    .method_ts::<Tensor>("atomic_energies", &[])
+                    .and_then(|t| {
+                        t.f_to_dtype_layout((Kind::Double, tch::Device::Cpu), false, false)
+                    })
+                    .and_then(|t| Vec::<f64>::try_from(&t))
+                    .map_err(|e| backend("v2 export without a valid atomic_energies()", e))?;
+                if e0.len() != z.len() {
+                    return Err(PotentialError::Backend(format!(
+                        "atomic_energies() has {} values for {} atomic numbers",
+                        e0.len(),
+                        z.len()
+                    )));
+                }
+                if let Some(k) = e0.iter().position(|e| !e.is_finite()) {
+                    return Err(PotentialError::Backend(format!(
+                        "atomic_energies() value {} (Z = {}) is not finite",
+                        e0[k], z[k]
+                    )));
+                }
+                // f64, in atom order (D-3); eV → Eh through `units` (U-3).
+                let mut sum_ev = 0.0;
+                for &s in &species {
+                    sum_ev += e0[s as usize];
+                }
+                Some(sum_ev / HARTREE_IN_EV)
+            }
+            Ok(v) => {
+                return Err(PotentialError::Backend(format!(
+                    "unsupported export interface: interface_version() returned {v:?}"
+                )));
+            }
+        };
         let kind = match dtype {
             Dtype::F64 => Kind::Double,
             Dtype::F32 => Kind::Float,
@@ -203,6 +252,7 @@ impl MacePotential {
             edges: Edges::default(),
             constants: Vec::new(),
             beads_per_graph: None,
+            e0_sum,
         })
     }
 
@@ -269,7 +319,10 @@ impl MacePotential {
                 first + k / (3 * n)
             )));
         }
-        energies.extend(e_ev.iter().map(|e| e / HARTREE_IN_EV));
+        match self.e0_sum {
+            None => energies.extend(e_ev.iter().map(|e| e / HARTREE_IN_EV)),
+            Some(e0) => energies.extend(e_ev.iter().map(|e| e / HARTREE_IN_EV + e0)),
+        }
         forces.extend(f_ev.iter().map(|f| f * BOHR_IN_ANGSTROM / HARTREE_IN_EV));
         Ok(())
     }

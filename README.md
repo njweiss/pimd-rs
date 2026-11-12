@@ -139,6 +139,10 @@ The weights are not in this repository and are under their own licence. Download
 [github.com/ACEsuit/mace-off](https://github.com/ACEsuit/mace-off) into `ff_models/mace_off23/`
 (ignored by git) and export with
 `pixi run -e ml python crates/pimd-torch/scripts/export_mace.py MODEL --out OUT.pt`.
+The script writes export interface v2 by default: the model returns the interaction energy and
+the engine adds the reference energies Σ E0 in f64, so float32 runs have no constant energy offset
+(M8b found +0.093 eV per 660-atom box with the old export). `--interface 1` writes the old export,
+which the engine still loads; exports made before M9 are v1 and are best regenerated.
 
 By default the P beads are evaluated as one batched graph. On a GPU with limited memory, set
 `potential.beads_per_graph = c` to evaluate them in consecutive chunks of c beads (SPEC P-6;
