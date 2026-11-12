@@ -57,7 +57,7 @@ pixi run test-validation        # same as CHECK_LONG=1 ./scripts/check.sh
 | M5 Socket backend, GFN2-xTB | merged |
 | M6 Torch backend, MACE-OFF23, ML-RPMD study | merged (2026-11-04) |
 | M7 Dynamics (RPMD, TRPMD; M7b PA-CMD) | M7a merged (2026-11-04); M7b merged (2026-11-05) |
-| M8 Solvated ligand (NMA in water, periodic MACE) | spike done; M8a merged (2026-11-07); M8b study next |
+| M8 Solvated ligand (NMA in water, periodic MACE) | spike done; M8a merged (2026-11-07); M8b study merged (2026-11-12) |
 
 Update this table when a milestone merges.
 
