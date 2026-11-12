@@ -186,7 +186,7 @@ pimd-traj <trajectory.xyz>... --out <file.extxyz> [--beads] [--box-angstrom L] [
 - **`--beads`:** all P·N atoms, bead-major, with a `bead` column 0 … P−1. A ring polymer then shows
   as a cloud in OVITO, colour-coded by bead.
 - **Wrapping** (box given, without `--no-wrap`):
-  - Molecules are the connected components of the first kept frame's centroids, with edges between atoms closer than `--bond-angstrom` (default 1.6 Å) under minimum image (C-2).
+  - Molecules are the connected components of the first kept frame's centroids, with edges between atoms closer than `--bond-angstrom` (default 1.6 Å) under minimum image (C-2). A molecule split across the box in that frame is made whole once (Q40 item 3, "Clarifications" below).
   - Each frame, each molecule's beads and centroids are shifted together by one lattice vector, so the molecule's first atom's centroid lies in [0, L)³. Molecules and ring polymers are never split.
   - Without a box: no wrap and no `Lattice`/`pbc`.
 - **Errors:** the run stops on the first error with a message naming the file and the line. Errors are:
@@ -228,6 +228,70 @@ pimd-traj <trajectory.xyz>... --out <file.extxyz> [--beads] [--box-angstrom L] [
 - bead column off by one;
 - `Lattice` written as row sums;
 - the bond cutoff without minimum image.
+
+### Clarifications (owner, 2026-11-12; Q40)
+
+The tests are in `crates/pimd-cli/tests/traj.rs`, `traj_common/mod.rs` and `long_traj_ase.rs`. The
+lock is the last `tests(m9b):` commit.
+
+1. **Output layout.**
+   - Line 2 starts with `step=<s>`.
+   - With a box, ` Lattice="L 0 0 0 L 0 0 0 L" pbc="T T T"` follows. This also holds with `--no-wrap`.
+   - ` Properties=…` comes last.
+   - Fields are separated by single spaces, with no trailing space, and every line ends in `\n`.
+   - L and coordinates are written with `{}`, so L = 10 is written `10`.
+   - Rows are `symbol x y z`, or `symbol x y z bead` with `--beads`.
+   - A centroid row takes the symbol of the atom's bead-0 row.
+2. **Wrap shift.** The shift is −floor(c/L)·L per component, an exact lattice vector. Here c is the
+   (offset, item 3) centroid of the molecule's lowest-index atom. The shift applies to all of that
+   molecule's beads and centroids. Test inputs are multiples of 0.25 Å, so they are exact in f64.
+   Test 6 compares to 1e-12 Å.
+3. **Molecules, made whole once (amended by the owner).**
+   - Molecules are the connected components of the first kept frame's centroids. An edge needs a
+     C-2 distance strictly below `--bond-angstrom`.
+   - In that frame, each molecule is walked breadth-first from its lowest-index atom. The walk uses
+     a FIFO queue. From the atom taken off the queue, its unvisited bonded atoms are visited in
+     ascending index.
+   - A newly reached atom j, reached from parent i, gets the offset n_j = n_i + k·L, with
+     k = −floor((c_j − c_i)/L + 1/2) per component; the root's offset is 0. This places c_j at the
+     minimum image of the parent's placed centroid.
+   - The offsets are fixed. In every frame they move all of that atom's beads and its centroid, so a
+     ring polymer is never split. The per-molecule wrap shift of item 2 follows.
+   - `--no-wrap`, or no box: no offsets and no wrap (positions as written).
+4. **`--every n`.** Frames are counted from 0 over the joined sequence, after restart drops.
+   Indices 0, n, 2n, … are kept.
+5. **P and N.** The first frame fixes P and N. Any later frame with a different P or N is an error,
+   in a later file or in the same file.
+6. **Error messages.**
+   - The message names the path as given and a 1-based line, as `line <k>` or `<path>:<k>`. Line
+     numbers count within each file.
+   - The exit status is non-zero and not a panic (≠ 101).
+   - These errors may name the frame's count line or its header line:
+     - a malformed header;
+     - a count ≠ P·N;
+     - a step that does not increase;
+     - a P/N mismatch.
+   - A malformed atom line names that line.
+   - A partial last frame in the last file may name its count line, its header line, the file's
+     last line or the line after it.
+   - With two errors, only the first is named.
+   - L ≤ 0 (including −0), `inf`, `NaN` and `--every 0` fail cleanly; their message is not checked.
+7. **Malformed lines that are tested.**
+   - Atom lines: not exactly four fields, a non-numeric coordinate, or an empty line.
+   - Headers: `units=` missing, `step=` missing, or a non-numeric step or beads value.
+   - Untested: other `units=` values, extra fields, and non-finite coordinates.
+8. **Test 6.** The "`--centroids` output" is the default output; there is no such flag. The run goes
+   through `pimd_cli::run`. Atoms 0 and 1 are bonded only through the box at `--bond-angstrom 3.5`,
+   which exercises item 3.
+9. **Test 4.** The test runs ASE from `.pixi/envs/ref/bin/python`, or `pixi run -e ref python`
+   (ASE 3.29.0, numpy 2.5.4). With a box, ASE must read cell diag(L, L, L) and pbc all true.
+   Without one, it must read a zero cell and pbc all false. Without `--beads` there is no `bead`
+   array.
+10. **Stub.** The stub is binary-only (`[[bin]] pimd-traj`, `src/bin/pimd-traj.rs`), with no library
+    API. Argument types:
+    - `--every`: `usize`, default 1;
+    - `--box-angstrom`: `Option<f64>`;
+    - `--bond-angstrom`: `f64`, default 1.6.
 
 ### Out of scope (M9b)
 
