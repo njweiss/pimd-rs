@@ -12,6 +12,10 @@ name = "pimd_cli"
 name = "pimd-rs"
 path = "src/main.rs"
 
+[[bin]]
+name = "pimd-traj"
+path = "src/bin/pimd-traj.rs"
+
 [dependencies]
 pimd-core.workspace = true
 pimd-potentials.workspace = true
