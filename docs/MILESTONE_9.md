@@ -134,6 +134,24 @@ Long (`CHECK_LONG=1 CHECK_TORCH=1`, `PIMD_MACE_MODEL`, CUDA rows skip without CU
 - `atomic_energies()` read after the cast (f32-rounded);
 - validation after the settings change.
 
+### Clarifications (owner, 2026-11-12; Q38–Q39, test commit 8a6710d)
+
+- **Test 2 (Q38):**
+  - Test 2 uses a mixed-sign E0 table: H +1000000.03, C −2000000.05, N −1500000.3 and O −2002069.23 eV. Every term is about 1e6 eV and the totals are about −2,000 to −8,000 eV. The v1 float32 offset is then ≥ 327 ulp. With same-sign E0 the tiny systems stay below 1 ulp.
+  - v2 float32 tolerance: 2^-24·2^8·max(|E_int,j|, N·1 eV) per bead.
+  - The float64 row uses 1e-8 eV absolute, because the partial sums of 6e6 eV round at ≈ 5e-10 eV.
+- **Test details (Q39):**
+  1. "Threads 1 and 4 bitwise" means bitwise within each libtorch thread count (D-3, as M6/M8a). The constant-energy stub must also agree across thread counts, and for every bead and chunk size.
+  2. Test 3's bits are main's (aa3fe6d) on this workstation; re-record them with main's code on another CPU or libtorch build.
+  3. A v2 export without `atomic_energies()`, or with ±∞ in it, is `Backend` at load.
+  4. The stub's float32 energies are bitwise equal to its float64 energies. Its energy equals (E_int + Σ E0)/27.211386245988 to 1e-14 relative.
+  5. A model without `atomic_energies_fn` is refused by `export_mace.py`:
+     - the script exits non-zero and writes no file;
+     - stderr names `atomic_energies_fn`, with no traceback.
+
+     `--interface 1` output is bitwise equal through the adapter to `tiny_mace_f64.pt`. The "lacks interaction_energy" refusal is untested.
+  6. Test 6 also checks forces: 1e-10·max|F| in float64. It asserts that the default export has `interface_version()` = 2.
+
 ### Out of scope (M9a)
 
 - Re-running the M8b study.

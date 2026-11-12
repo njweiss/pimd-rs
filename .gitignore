@@ -1,5 +1,6 @@
 /target/
 .claude/*
+!.claude/commands/
 
 # pixi environments (pixi.lock is committed)
 .pixi/
