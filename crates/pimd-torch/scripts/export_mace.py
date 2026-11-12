@@ -29,7 +29,8 @@ forward's energy is MACE's interaction energy (without the reference energies E0
 The adapter adds Σ_i E0(Z_i) in f64. Forces and virials are unchanged: MACE takes them from the
 interaction energy already. `--interface 1` writes the M6 export (energy = MACE's total energy, no
 atomic_energies() or interface_version()). A v2 export is refused for a model without
-`atomic_energies_fn` or whose outputs lack `interaction_energy` (e.g. plain `MACE`).
+`atomic_energies_fn`, with more than one head, or whose outputs lack `interaction_energy`
+(e.g. plain `MACE`).
 
 Forces are -dE/dpositions by autograd inside the module (MACE `compute_force=True`), so the
 caller must keep grad mode enabled (no `no_grad`).
@@ -187,7 +188,7 @@ def _has_interaction_energy(model: torch.nn.Module, dtype: torch.dtype) -> bool:
 def export(model: torch.nn.Module, dtype: torch.dtype = torch.float64, interface: int = 2):
     """The scripted wrapper of `model` (cast to `dtype`, parameters frozen): `PimdMaceV2` for
     `interface` 2, the M6 `PimdMace` for 1. Raises `Refused` for a v2 export of a model without
-    `atomic_energies_fn` or without an `interaction_energy` output."""
+    `atomic_energies_fn`, with more than one head, or without an `interaction_energy` output."""
     if interface == 1:
         model = model.to(dtype).eval()
         for p in model.parameters():
@@ -198,8 +199,14 @@ def export(model: torch.nn.Module, dtype: torch.dtype = torch.float64, interface
             "the model has no atomic_energies_fn (no E0 table); interface v2 needs it "
             "(use --interface 1 for the old export)"
         )
+    table = model.atomic_energies_fn.atomic_energies
+    if table.dim() > 1 and table.shape[0] > 1:
+        raise Refused(
+            f"the model has {table.shape[0]} heads (E0 table {tuple(table.shape)}); "
+            "interface v2 supports single-head models only"
+        )
     # The E0 table as float64, before the model is cast (exact in the float32 export too).
-    e0 = model.atomic_energies_fn.atomic_energies.detach().clone().to(torch.float64).reshape(-1)
+    e0 = table.detach().clone().to(torch.float64).reshape(-1)
     model = model.to(dtype).eval()
     for p in model.parameters():
         p.requires_grad_(False)
