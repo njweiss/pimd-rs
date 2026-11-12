@@ -151,6 +151,11 @@ Long (`CHECK_LONG=1 CHECK_TORCH=1`, `PIMD_MACE_MODEL`, CUDA rows skip without CU
 
      `--interface 1` output is bitwise equal through the adapter to `tiny_mace_f64.pt`. The "lacks interaction_energy" refusal is untested.
   6. Test 6 also checks forces: 1e-10·max|F| in float64. It asserts that the default export has `interface_version()` = 2.
+- **Review (owner, 2026-11-12):**
+  - Any `interface_version()` other than 2, including 1, is `Backend`. v1 means the method is absent.
+  - An export with `atomic_energies()` but no `interface_version()` is `Backend`, not v1.
+  - A non-finite E0 sum is `Backend`.
+  - `export_mace.py` refuses a multi-head model (an E0 table with more than one row), naming the head count.
 
 ### Out of scope (M9a)
 
