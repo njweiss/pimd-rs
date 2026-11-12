@@ -293,6 +293,19 @@ lock is the last `tests(m9b):` commit.
     - `--box-angstrom`: `Option<f64>`;
     - `--bond-angstrom`: `f64`, default 1.6.
 
+### Review decisions (owner, 2026-11-12; review of 4ef8a45; fixed without new tests)
+
+- **F1.** In a file other than the last, a frame cut anywhere is dropped silently, including inside its header line. This matches the existing rule for a cut count line.
+- **F2.** An empty file, or one with no complete first header, contributes no frames. The restart cut for the file before it uses the first step of the next non-empty file.
+- **F3.** `--out` naming the same file as any input (after resolving the path) is an error, raised before anything is written.
+- **F4.** On any error, the output file is removed.
+- **F5.** `--bond-angstrom` must be finite and > 0; otherwise it is an error.
+- **F6.** A non-finite coordinate is an error naming the file and line.
+- Left as they are:
+  - an empty only input gives an empty output with exit 0;
+  - a trailing blank line in the last file is "incomplete last frame";
+  - the C-3 rounding at c = −ε (inherent to Q40 item 2).
+
 ### Out of scope (M9b)
 
 - PDB, DCD or other formats;
