@@ -7,7 +7,7 @@ Runs are named by their output directory under out/ (p1/p1, quantum/p8, ...). Pe
 joined parts (health.py): energies per molecule (217 molecules) and T_est from observables.csv;
 from every trajectory frame, per bead and then averaged over beads: site RDFs (minimum image,
 bins of 0.05 Å on [0, 9) Å; g_OH water–water intermolecular only), hydrogen-bond counts and
-H···acceptor distances, NMA bond lengths and torsions. Errors: σ is the largest standard error of
+H···acceptor distances, NMA bond lengths and torsions (spread of ω about trans). Errors: σ is the largest standard error of
 the mean over 1, 2 and 4 ps blocks (rows for energies, frames for structure); a derived quantity
 (peak position, coordination number, ratio) is computed per block and its σ taken the same way;
 a block where a ratio is undefined (no hydrogen bond in it) is left out of that ratio's σ.
@@ -111,6 +111,8 @@ def per_bead(b, s, ow, hw, L):
     out["omega"] = dihedral(p["CM1"], p["C"], p["N"], p["CM2"])
     out["ocnh"] = dihedral(p["O"], p["C"], p["N"], p["HN"])
     out["trans"] = float(abs(out["omega"]) > 150.0)
+    dev = (out["omega"] % 360.0) - 180.0                        # signed deviation from trans
+    out["omega_dev"], out["omega_dev2"] = dev, dev * dev
     return out
 
 
@@ -167,6 +169,10 @@ def rdf_norm(name, L):
 # First-peak search windows (Å): the hydrogen-bond shell of each pair. The single-site RDFs are
 # noisy and their first peak can be lower than the bulk shells beyond it, so the global maximum
 # is not used (P = 1 test of this script).
+# Coordination-number cutoffs (Å), the same for every run so that runs compare: the P = 1 first
+# minima rounded to 0.05 Å (water O–O 3.55, O–H 2.45 the usual choices). A run's own first
+# minimum is reported but moves by up to 0.2 Å between runs in the noisy single-site RDFs.
+CN_CUT = {"g_onma_hw": 2.6, "g_onma_ow": 3.5, "g_hn_ow": 2.6, "g_n_ow": 3.4, "g_oo": 3.55, "g_oh": 2.45}
 PEAK_WINDOW = {"g_onma_hw": (1.4, 2.6), "g_onma_ow": (2.4, 3.4), "g_hn_ow": (1.5, 2.6),
                "g_n_ow": (2.6, 3.5), "g_oo": (2.4, 3.2), "g_oh": (1.4, 2.4)}
 
@@ -202,11 +208,11 @@ def analyse(name):
         rdf[g] = full
         w = PEAK_WINDOW[g]
         r_min = peak(full, w)[2]
-        cut = R_MID < r_min
+        cut = R_MID < CN_CUT[g]
         res[f"{g}_peak_r"] = stat([fs[g]], lambda a: peak(a / norm, w)[0], FRAMES_PER_PS)
         res[f"{g}_peak_h"] = stat([fs[g]], lambda a: peak(a / norm, w)[1], FRAMES_PER_PS)
         res[f"{g}_r_min"] = r_min
-        # Coordination number to the full run's first minimum: pairs per A-site inside r_min.
+        # Coordination number: pairs per A-site inside CN_CUT.
         n_a = norm[0] / (rho * SHELL[0])
         res[f"{g}_cn"] = stat([fs[g]], lambda a: a[cut].sum() / n_a, FRAMES_PER_PS)
     for k, (rc, ac) in enumerate(HB_CUTS):
@@ -217,6 +223,8 @@ def analyse(name):
                 res[f"hb_{d}_dist"] = stat([fs[f"hb_{d}_d0"], fs[f"hb_{d}_n0"]], lambda a, b: a / b if b > 0 else np.nan, FRAMES_PER_PS)
     for k in ("r_co", "r_cn", "r_nh", "trans"):
         res[k] = stat([fs[k]], lambda a: a, FRAMES_PER_PS)
+    res["omega_sd_deg"] = stat([fs["omega_dev"], fs["omega_dev2"]], lambda a, b: np.sqrt(max(b - a * a, 0.0)),
+                               FRAMES_PER_PS)
     res["r_nh_sd"] = stat([fs["r_nh"], fs["r_nh2"]], lambda a, b: np.sqrt(max(b - a * a, 0.0)), FRAMES_PER_PS)
     res["throughput_ms_per_step"] = throughput(run)
     hist = {k: fs[f"h_{k}"].mean(0) for k in HIST}

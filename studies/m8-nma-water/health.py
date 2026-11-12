@@ -83,7 +83,9 @@ def frames(run):
 
 
 def observables(run):
-    tables = [np.genfromtxt(f, delimiter=",", names=True) for f in parts(run, "observables.csv")]
+    # A part cut by a crash can end in a partial line; it lies past the checkpoint and is dropped.
+    tables = [np.genfromtxt(f, delimiter=",", names=True, invalid_raise=f.parent == run)
+              for f in parts(run, "observables.csv")]
     keep = [t[t["step"] < nxt["step"][0]] for t, nxt in zip(tables, tables[1:])] + [tables[-1]]
     return np.concatenate(keep)
 
