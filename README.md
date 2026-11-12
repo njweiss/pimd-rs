@@ -102,6 +102,28 @@ below π, and results should be checked at two Ω. λ has no consensus value: Ro
 1/2 is for TRPMD, while Castro, Trenins, Kapil and Rossi (arXiv:2508.16246) use 0.001–0.01. See
 the M7b brief in [`docs/MILESTONE_7.md`](docs/MILESTONE_7.md).
 
+### Viewing trajectories: `pimd-traj`
+
+```bash
+pimd-traj <trajectory.xyz>... --out <file.extxyz> [--beads] [--box-angstrom L] [--every n]
+          [--no-wrap] [--bond-angstrom 1.6]
+```
+
+Converts `trajectory.xyz` (written with `[output] trajectory_every`) to extended XYZ that OVITO,
+VMD and ASE read directly. It streams, so multi-GB trajectories are fine.
+
+- **Inputs:** files from a restarted run go in run order (`part0/trajectory.xyz part1/… ./…`); a
+  frame whose step is ≥ the next file's first step is dropped.
+- **Output:** by default the N ring-polymer centroids per frame. `--beads` writes all P·N beads with
+  a `bead` column (0 … P−1) to colour by. `--every n` keeps every n-th frame.
+- **Box:** with `--box-angstrom L` (cubic) the output carries `Lattice`/`pbc`. Molecules (bonds
+  shorter than `--bond-angstrom` in the first frame, minimum image) are made whole once, then
+  shifted as a unit each frame so that their first atom's centroid lies in the box; neither
+  molecules nor ring polymers are split.
+  `--no-wrap` writes positions as they are.
+
+See M9b in [`docs/MILESTONE_9.md`](docs/MILESTONE_9.md).
+
 ## Validation
 
 [`validation/RESULTS.md`](validation/RESULTS.md) lists every reference comparison with its
