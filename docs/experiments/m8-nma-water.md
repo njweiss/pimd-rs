@@ -483,6 +483,11 @@ projection 76, 487, ≈ 975, 1 967: −5 % to −1 %, **holds**. Production used
    biases ⟨E_prim⟩ (−6 × 10⁻⁵ Eh per atom at P = 32) and, less, ⟨E_vir⟩. A Cayley-modified
    free propagator (BCOCB) would remove the P growth; a candidate milestone, not needed for the
    conclusions here.
+   **Corrected 2026-11-12:** the harmonic desk check `cayley_bias.py` does not support the claim
+   that BCOCB removes the P growth. It lowers the bias by about 25 % (E_prim error −4.6 × 10⁻⁵
+   vs −6.2 × 10⁻⁵ Eh per atom at P = 32; E_vir +2.0 × 10⁻⁵ vs +2.7 × 10⁻⁵), and the E_prim
+   growth with P remains. The E_vir bias already levels off with P under BAOAB. Not taken up
+   (MILESTONE_9 decision 1).
 3. **More solute sampling** if Q1 matters: the solute H-bond questions need ≈ 10× the
    statistics.
 4. The MACE-OFF23 medium model check stays on hold.
