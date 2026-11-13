@@ -327,5 +327,5 @@ sampling; electrostatics; NPT.
 - [x] M9a: all tests pass; `check.sh` and `CHECK_TORCH=1` exit 0; long validation passes; review
       done with no blocking findings; `QUESTIONS.md` has no open entries
 - [x] M9b: the same
-- [ ] `ff_models/exports/` regenerated as v2 (not committed); README updated for v2 exports and
+- [x] `ff_models/exports/` regenerated as v2 (not committed); README updated for v2 exports and
       `pimd-traj`
