@@ -297,6 +297,7 @@ lock is the last `tests(m9b):` commit.
 
 - **F1.** In a file other than the last, a frame cut anywhere is dropped silently, including inside its header line. This matches the existing rule for a cut count line.
 - **F2.** An empty file, or one with no complete first header, contributes no frames. The restart cut for the file before it uses the first step of the next non-empty file.
+  Amended (owner, 2026-11-13): this applies to files other than the last. In the last file, a count line or header with no atom lines after it is "incomplete last frame", as the brief states; an empty last file still contributes no frames.
 - **F3.** `--out` naming the same file as any input (after resolving the path) is an error, raised before anything is written.
 - **F4.** On any error, the output file is removed.
 - **F5.** `--bond-angstrom` must be finite and > 0; otherwise it is an error.
