@@ -1,6 +1,6 @@
 # Milestone 9: float64 reference energies for float32 MACE; trajectory export for viewers
 
-Status: **brief approved (owner, 2026-11-12)**; decisions 1–3 confirmed. M9a tests next. Two independent engine phases, each A/B/C:
+Status: **merged (2026-11-13)**; brief approved (owner, 2026-11-12), decisions 1–3 confirmed. Two independent engine phases, each A/B/C:
 
 | Phase | Flow | Output |
 | --- | --- | --- |
@@ -324,8 +324,8 @@ sampling; electrostatics; NPT.
 ## Acceptance
 
 - [x] Owner approves this brief, decisions 1–3, the P-6 sentence and the `pimd-traj` command line
-- [ ] M9a: all tests pass; `check.sh` and `CHECK_TORCH=1` exit 0; long validation passes; review
+- [x] M9a: all tests pass; `check.sh` and `CHECK_TORCH=1` exit 0; long validation passes; review
       done with no blocking findings; `QUESTIONS.md` has no open entries
-- [ ] M9b: the same
+- [x] M9b: the same
 - [ ] `ff_models/exports/` regenerated as v2 (not committed); README updated for v2 exports and
       `pimd-traj`
