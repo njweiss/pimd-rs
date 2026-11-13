@@ -321,16 +321,18 @@ fn write_all(a: &Args, mut w: BufWriter<File>) -> Result<(), String> {
         while let Some((count_line, count, _)) = r.next_line()? {
             let count: Option<usize> = count.trim().parse().ok();
             let partial = || at(path, count_line, "incomplete last frame");
-            let first_in_file = prev_step.is_none();
             let Some((header_line, header, end)) = r.next_line()? else {
-                if last && !first_in_file {
+                if last {
                     return Err(partial());
                 }
                 break;
             };
             // A frame cut at or inside its header line: dropped in a file other than the last
-            // (F1); a file without a complete first header holds no frames (F2).
-            if end && (first_in_file || !last) {
+            // (F1, F2); in the last file it is an incomplete last frame.
+            if end {
+                if last {
+                    return Err(partial());
+                }
                 break;
             }
             let count = count.ok_or_else(|| at(path, count_line, "malformed count line"))?;
