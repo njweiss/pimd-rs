@@ -1,6 +1,6 @@
 # M11 study: failure modes of ring-polymer dynamics methods, tier 1 (Morse OH, exact reference)
 
-Status: **plan drafted (2026-11-14), awaiting owner approval.** Experiment flow: this plan is
+Status: **plan approved (owner, 2026-11-14); pilot in progress.** Experiment flow: this plan is
 committed before any measurement; the log is appended as runs happen; results and writeup cite
 the log. No engine change: the engine is used as merged (main at b95f3d1).
 
@@ -163,4 +163,49 @@ above (P, Δt, segment count); any other change is logged with the reason before
 
 ## Log
 
-(empty until the plan is approved)
+### 2026-11-14 01:00 – 01:50 Pilot steps 1–3 (engine at 26761ec; CPU only, GPU idle)
+
+Scripts: `morse_client.py`, `exact.py`, `run.py`, `statics.sh`, `statics.py` (studies/m11-dynamics-failure/).
+Outputs: `out/pilot/{timing,statics}/`.
+
+- **Client check** (`morse_client.py --check`): max |F_fd − F|/max |F| = 2.2e-10 (S1), 8.6e-11 (S2).
+- **Exact reference** (`exact.py --check`): μ = 1728.565 181 m_e = 0.948 256 amu (the plan's
+  0.948 336 was a typing slip; the code uses the masses as written). ω_e = 3751.28 cm⁻¹.
+  Grid 600 vs 900 points: C_xx and C_vv agree to ≤ 7e-12 relative (both systems, 300 and 100 K).
+  Sum rule C̃_vv(0) = 3/(βμ): satisfied to ≤ 8e-12. Harmonic limit vs analytic Kubo C_xx: 8e-13.
+  The first version failed the sum rule (−50 % at 100 K): pairs whose final state is not a kept
+  initial state were counted once instead of twice; fixed (`mirror()`), then all checks pass.
+  S2 needs l ≤ 18 (300 K), l ≤ 10 (100 K).
+- **Clarification of H4 / the reference self-checks:** the static quantity the runs measure at lag
+  0 is the Kubo-transformed C̃_xx(0) (centroid second moment), not ⟨x²⟩; C̃_vv(0) = 3/(βμ)
+  exactly. The comparisons use those.
+- **Round trip** (`out/pilot/timing/`, Δwall between 200 and 1200 plain PIMD steps): S1, P = 32:
+  4.06 / 2.61 / 1.86 ms per step with K = 1 / 2 / 4 (58 µs per request at K = 4). S2, P = 192:
+  14.5 / 11.1 / 8.1 ms per step with K = 4 / 8 / 12.
+- **Statics vs exact** (`statics.py`; 2000 + 20 000 PILE-L steps, Δt = 0.1 fs, N = 64; % of exact,
+  σ from 10 blocks; E_vir shown, ⟨V⟩ and E_prim agree with it within ≈ 2σ):
+
+  | | P = 16 | 32 | 64 | 48 | 96 | 128 |
+  |---|---|---|---|---|---|---|
+  | S1 300 K | −12.8 ± 0.04 | −3.95 ± 0.07 | −1.04 ± 0.07 | | | |
+  | S1 100 K | | | | −12.8 ± 0.05 | −3.77 ± 0.06 | −2.17 ± 0.04 |
+  | S2 300 K | −11.3 ± 0.07 | −3.62 ± 0.16 | −1.13 ± 0.11 | | | |
+  | S2 100 K | | | | −12.4 ± 0.09 | −3.61 ± 0.06 | −2.09 ± 0.07 |
+
+  The error falls as 1/P² and depends on P/T only (100 K at P = 96 equals 300 K at P = 32).
+  Δt = 0.05 fs gives the same values within σ (S1/S2 at 300 K P = 32 and 100 K P = 96).
+- **P choice (plan rule: within 1 % of exact):** P = 64 at 300 K (≈ −1.0 %), P = 192 at 100 K
+  (≈ −0.9 % by the 1/P² trend from 96 and 128), twice the plan's expectation. Δt = 0.1 fs kept.
+- **Budget re-estimate:** throughput is CPU-bound at ≈ 24 000 bead-steps per second on all 12
+  cores (P = 192, K = 12). 100 segments for the 6 quantum runs per temperature plus ≈ 6
+  convergence runs ≈ 4.2e9 bead-steps ≈ 49 h: inside the 72 h cap; the segment count from step 4
+  may lower it.
+- **Change before production (logged per the plan):** `correlations.csv` carries the mean and σ of
+  C_vv per lag but no per-segment functions, so the spectral metrics' σ cannot be bootstrapped
+  over segments. Instead each production run is split into independent replicas (different seeds,
+  equal segment counts), which also run in parallel; the metrics' σ is the standard error over
+  replicas (`analyse.py`). The time-domain σ uses the engine's per-lag σ.
+
+### 2026-11-14 01:55 Pilot step 4 started (`pilot_dyn.sh`; `out/pilot/dyn/`)
+
+300 K, 10 segments per run, P = 64 (classical P = 1), K = 3, three runs at a time, both systems.
