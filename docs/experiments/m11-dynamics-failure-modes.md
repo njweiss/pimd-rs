@@ -209,3 +209,42 @@ Outputs: `out/pilot/{timing,statics}/`.
 ### 2026-11-14 01:55 Pilot step 4 started (`pilot_dyn.sh`; `out/pilot/dyn/`)
 
 300 K, 10 segments per run, P = 64 (classical P = 1), K = 3, three runs at a time, both systems.
+
+### 2026-11-14 02:25 Pilot step 4 results (`analyse.py out/pilot/dyn/*`; 10 segments, one replica each)
+
+Wall ≈ 1 400 s per P = 64 run (three at a time, K = 3), ≈ 200 s classical.
+
+| | centre (cm⁻¹) | width (cm⁻¹) | C̃_xx(0) vs exact |
+|---|---|---|---|
+| S1 exact | 3580.3 | 8.0 (window) | |
+| S1 classical | 3733.5 | 14.2 | −2.85 % (classical, not H4) |
+| S1 RPMD | 3649.7 | 36.6 | −0.03 % |
+| S1 TRPMD | 3644.6 | 123.5 | −0.03 % |
+| S1 PA-CMD | 3623.5 | 73.5 | −0.04 % |
+| S2 exact | 3595.5 | 120.5 (P/R branches) | |
+| S2 classical | 3717.6 | 125.1 | +0.09 % |
+| S2 RPMD | 3634.6 | 139.3 | −0.06 % |
+| S2 TRPMD | 3590.7 | 217.7 | −0.03 % |
+| S2 PA-CMD | 3446.9 | 188.6 | −0.03 % |
+
+- H4 holds in the pilot (all quantum C̃_xx(0) within 0.06 %). C_vv deviations are 10–900 engine σ,
+  dominated by the frequency shifts (a 70 cm⁻¹ shift dephases fully within 500 fs).
+- No σ for the spectral metrics yet (one replica).
+- **Metric changes before production** (logged per the plan; decided on the pilot's form of the
+  spectra, not on which method they favour):
+  1. *Peak* is kept but is not a band position for S2: the exact S2 spectrum has P and R branches
+     and no Q branch, so its maximum is the R-branch top (3683.7 cm⁻¹). The **band centre** (first
+     moment over 2800–4400 cm⁻¹) is the primary position metric for both systems.
+  2. *Spurious weight*: the plan's ∫|I − I_exact| outside ±150 cm⁻¹ of the exact peak measured
+     misplacement (any shift scores ≈ 1 for S1) and, for S2, the rotational band. Replaced by the
+     fraction of ∫|I| above 1500 cm⁻¹ lying more than 400 cm⁻¹ from the spectrum's own band
+     centre (exact: 0.000 for both systems; pilot: 0.000–0.13).
+- **Segment count:** the effects seen are 40–150 cm⁻¹. Production uses 4 replicas × 10 segments per
+  (system, T, method), the pilot runs as replica 0 at 300 K (same settings, own seeds); more
+  replicas are added only if a metric's σ is too large to classify an effect (plan rule).
+- **Q4 runs** (2 replicas each, 300 K): P = 128 (RPMD, PA-CMD), Δt = 0.05 fs (RPMD), PA-CMD at
+  Ω = 32 000 cm⁻¹ with Δt = 0.05 fs; both systems. 100 K convergence is inferred from P/T scaling
+  of the statics unless the 300 K checks fail.
+- **Budget:** 72 runs (`production.sh`), ≈ 3 h for 300 K, ≈ 3 h for Q4, ≈ 9–10 h for 100 K.
+
+### 2026-11-14 02:30 Production started (`production.sh`; `out/prod/`, `out/production.log`)
