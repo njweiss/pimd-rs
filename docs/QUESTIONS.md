@@ -12,7 +12,7 @@ Proposed resolution:
 Owner decision:
 ```
 
-Number new entries from Q41. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
+Number new entries from Q43. Once an entry is resolved and its decision is written into SPEC, WORKFLOW or a
 brief, it moves to the index below; the full text stays in git history.
 
 ## Resolved (index)
@@ -61,3 +61,5 @@ Code and tests cite these numbers. Each decision now lives where the last column
 | Q38 | M9a test 2 uses a mixed-sign ≈1e6 eV E0 table; v2 float32 tolerance 2^-24·2^8·max(|E_int|, N eV) per bead; float64 row 1e-8 eV absolute | MILESTONE_9 M9a "Clarifications" |
 | Q39 | Details pinned by the M9a tests (determinism per thread count, machine-specific v1 bits, ±∞/missing E0 → `Backend`, stub bit equality, script refusal without traceback, test 6 forces) | MILESTONE_9 M9a "Clarifications" |
 | Q40 | Details pinned by the M9b tests (extxyz layout, wrap shift, molecules made whole once in the first kept frame by a BFS of minimum-image offsets, `--every` over the joined sequence, P/N fixed by the first frame, error naming, test 6 and 4 details, binary-only stub) | MILESTONE_9 M9b "Clarifications" |
+| Q41 | Test 6 uses `tiny_mace_cueq.model` (`use_reduced_cg = False`); the cueq converter trusts that flag; README notes the failure mode | MILESTONE_10 "Clarifications" |
+| Q42 | Details pinned by the M10a tests (hand-written i-PI server for test 4, unknown-element routes, strict r_max < L_min/2, relative `positions_xyz` resolved against the working directory, equivalent cutoff mutants, test data sources) | MILESTONE_10 "Clarifications"; SPEC K-7 |

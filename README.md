@@ -178,6 +178,65 @@ Setting `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` in the environment re
 fragmentation (the engine does not set it). Positions and symbols can also be read from an xyz file
 with `system.positions_xyz`.
 
+### MACE through the socket client (e3nn or cuEquivariance)
+
+`crates/pimd-torch/scripts/mace_client.py` (SPEC K-7) evaluates a MACE model file (the pickled
+`.model`, not an export) as an i-PI socket client, one bead per request, with the same edges, Σ E0
+handling and unit constants as the in-process adapter. Its point is NVIDIA's cuEquivariance
+kernels, which cannot run inside the engine: about 4.5× faster per step at P = 32 with four clients
+on the NMA + 216 water box ([`docs/experiments/m10-profiling-spike.md`](docs/experiments/m10-profiling-spike.md)).
+Use the existing socket potential and start `n_clients` clients, each reading the atoms from the
+same config:
+
+```toml
+[potential]
+kind = "socket"
+address = "unix:/tmp/pimd-mace.sock"
+n_clients = 4
+timeout_s = 600.0
+```
+
+```bash
+for k in 1 2 3 4; do
+  pixi run -e ml .venv-cueq/bin/python crates/pimd-torch/scripts/mace_client.py \
+      ff_models/mace_off23/MACE-OFF23_small.model --config run.toml \
+      --address unix:/tmp/pimd-mace.sock --backend cueq --dtype float32 --device cuda &
+done
+pimd-rs run.toml --out out/
+```
+
+Without cuEquivariance use `pixi run -e ml python` and `--backend e3nn` (the default; `--device`
+defaults to `cpu`, `--dtype` to `float64`). Run clients from the directory you run `pimd-rs` from
+when the config uses a relative `positions_xyz`. The clients exit when the run ends.
+
+- **Installing cuEquivariance.** Its kernel packages are under NVIDIA's proprietary licence, so
+  they are not part of the pixi environments and nothing of theirs is committed. Install them into
+  a venv layered on the `ml` environment, `.venv-cueq/` (ignored by git), with the versions tested:
+
+  ```bash
+  pixi run -e ml python -m venv --system-site-packages .venv-cueq
+  pixi run -e ml .venv-cueq/bin/python -m pip install \
+      cuequivariance-torch==0.13.0 cuequivariance-ops-torch-cu13==0.13.0
+  ```
+
+  The pin is deliberate: mace-torch 0.3.17 declares older ranges for its own `cueq` extra, but
+  0.13.0 is the version the M10 spike and the M10a tests ran with.
+  Run the venv's python inside `pixi run -e ml` (Triton needs that environment's `ptxas`).
+  `CHECK_CUEQ=1 ./scripts/check.sh` runs the cueq tests with it (`CUEQ_PYTHON` overrides the path).
+- **Host memory limits K.** Each MACE client holds 1.2–2.3 GB of host RAM (MACE-OFF23 small on the
+  660-atom box), so K ≤ host RAM / 2.3 GB: at most 4 clients on an 11 GB machine (K = 8 ran out of
+  memory). They share one GPU.
+- **`use_reduced_cg`.** `--backend cueq` converts the model with `mace.cli.convert_e3nn_cueq`, which
+  trusts the model's `use_reduced_cg` flag. A model trained with mace ≥ 0.3.1x in an environment
+  without cuEquivariance uses the full Clebsch–Gordan basis but stores `use_reduced_cg = True`; the
+  conversion then fails with an einsum size error ("subscript a has size 7 for operand 1 which does
+  not broadcast with previously seen size 9"). Set the attribute to `False` on the loaded model
+  and save it again, or convert with mace's own tools in an environment that has cuEquivariance
+  (QUESTIONS.md Q41). MACE-OFF23 converts as downloaded.
+- **Reproducibility.** On CUDA the client is not bitwise reproducible with either backend (SPEC
+  D-3): repeat runs agree to about 1e-8 Eh, and with the in-process adapter to the float32
+  tolerances of the tests. The in-process backend stays bitwise reproducible.
+
 ## License
 
 MIT; see [`LICENSE`](LICENSE).
