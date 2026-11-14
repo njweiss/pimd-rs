@@ -9,7 +9,9 @@ weights, and the σ of each spectral metric is the standard error over replicas.
   trapezoid rule; the exact C_vv is sampled on the same lag grid and transformed identically.
 - band centre and width: first moment and standard deviation of I over the stretch window
   2800–4400 cm⁻¹; peak: maximum in that window, refined by a parabola through three bins.
-- spurious weight: ∫|I − I_exact| outside ±150 cm⁻¹ of the exact peak, over ∫ I_exact (all ω ≥ 0).
+- spurious weight: fraction of ∫|I| over ω ≥ 1500 cm⁻¹ lying more than 400 cm⁻¹ from the
+  spectrum's own band centre, for the method and for exact (changed after the pilot, before
+  production; see the log).
 - time-domain error: max over 0–500 fs of |C_vv − C_exact| / C_exact(0), and the same in units of
   the engine's σ (c_vv_sem_au combined over replicas).
 """
@@ -56,9 +58,11 @@ def metrics(i_w, i_ref, peak_ref=None):
     y0, y1, y2 = i_w[win][k - 1:k + 2]
     peak = float(cm[win][k] + 0.5 * (y0 - y2) / (y0 - 2 * y1 + y2))
     out = {"centre_cm": centre, "width_cm": width, "peak_cm": peak}
-    if peak_ref is not None:
-        far = np.abs(cm - peak_ref) > 150
-        out["spurious"] = float(np.trapezoid(np.abs(i_w - i_ref) * far, cm) / np.trapezoid(i_ref, cm))
+    # Spurious weight: fraction of the weight above 1500 cm⁻¹ (past the rotational band) lying more
+    # than 400 cm⁻¹ from the spectrum's own band centre; the exact value is reported alongside.
+    hi = cm >= 1500
+    far = hi & (np.abs(cm - centre) > 400)
+    out["spurious"] = float(np.trapezoid(np.abs(i_w) * far, cm) / np.trapezoid(np.abs(i_w) * hi, cm))
     return out
 
 
@@ -112,7 +116,7 @@ def main():
         print(f"{system} {tk:5.0f}K {method:9s} P={p:<3d} dt={dt} Ω={omega} n={len(reps)}: "
               f"centre {s('centre_cm')} (exact {m_ref['centre_cm']:.1f}), "
               f"peak {s('peak_cm')} (exact {m_ref['peak_cm']:.1f}), "
-              f"width {s('width_cm')} (exact {m_ref['width_cm']:.1f}), spurious {row['spurious']:.3f}, "
+              f"width {s('width_cm')} (exact {m_ref['width_cm']:.1f}), spurious {row['spurious']:.3f} (exact {m_ref['spurious']:.3f}), "
               f"|ΔC_vv|/C(0) {row['cvv_err_rel']:.3f} ({row['cvv_err_sigma']:.1f}σ), "
               f"C_xx(0) {100 * row['cxx0_rel']:+.2f}%")
     if a.json:
