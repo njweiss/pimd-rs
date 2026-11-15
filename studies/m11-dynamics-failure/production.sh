@@ -1,19 +1,30 @@
 #!/usr/bin/env bash
 # M11 tier 1 production: 4 replicas x 10 segments per (system, T, method); the pilot's 300 K runs
 # (out/pilot/dyn/, same settings) are replica 0 at 300 K. Then the Q4 convergence runs (2 replicas).
-# Three runs at a time, K = 3 clients each (classical: K = 1). Jobs: system T method P K dt omega seed tag
+# Three runs at a time, K = 3 clients each (classical: K = 1). Jobs: system T method P K dt omega seed tag [run.py args]
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 export out=studies/m11-dynamics-failure/out/prod
 run() {
   local d="$out/$9"
   if [ -f "$d/correlations.csv" ]; then echo "$d done"; return 0; fi
+  if pgrep -f "target/release/pimd-rs $d/config.toml" >/dev/null; then echo "$d in flight"; return 0; fi
   python3 studies/m11-dynamics-failure/run.py "$d" --system $1 --t $2 --method $3 --p $4 --k $5 \
-    --dt-fs $6 --omega-cm $7 --segments 10 --seed $8
+    --dt-fs $6 --omega-cm $7 --segments 10 --seed $8 "${@:10}"
 }
 export -f run
 jobs() {
   local s m r
+  # 100 K PA-CMD at dt = 0.1/3 fs (0.1 fs is Verlet-unstable at 100 K; see the log), same simulated
+  # times and lag grid; then its dt check at 0.05 fs (r0, r1). Longest jobs first.
+  local x3="--decorr 3000 --seg-steps 60000 --stride 6 --n-equil 6000"
+  local x2="--decorr 2000 --seg-steps 40000 --stride 4 --n-equil 4000"
+  for r in 0 1 2 3; do for s in s1 s2; do
+    echo "$s 100 pa-cmd 192 3 0.0333333333333333 16000 7${s:1}1${r}6 ${s}_T100_pa-cmd_dt0.033_r$r $x3"
+  done; done
+  for r in 0 1; do for s in s1 s2; do
+    echo "$s 100 pa-cmd 192 3 0.05 16000 7${s:1}5${r}6 ${s}_T100_pa-cmd_dt0.05_r$r $x2"
+  done; done
   # 300 K production, replicas 1-3
   for r in 1 2 3; do for s in s1 s2; do
     for m in rpmd trpmd pa-cmd; do echo "$s 300 $m 64 3 0.1 16000 5${s:1}3${r}$(( ${#m} )) ${s}_T300_${m}_r$r"; done
@@ -30,7 +41,7 @@ jobs() {
   done
   # 100 K production, replicas 0-3
   for r in 0 1 2 3; do for s in s1 s2; do
-    for m in rpmd trpmd pa-cmd; do echo "$s 100 $m 192 3 0.1 16000 7${s:1}1${r}$(( ${#m} )) ${s}_T100_${m}_r$r"; done
+    for m in rpmd trpmd; do echo "$s 100 $m 192 3 0.1 16000 7${s:1}1${r}$(( ${#m} )) ${s}_T100_${m}_r$r"; done
     echo "$s 100 classical 1 1 0.1 16000 7${s:1}1${r}0 ${s}_T100_classical_r$r"
   done; done
 }
