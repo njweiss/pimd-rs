@@ -1,6 +1,6 @@
 # M11 study: failure modes of ring-polymer dynamics methods, tier 1 (Morse OH, exact reference)
 
-Status: **tier 1 measured (2026-11-15); results and writeup below; one owner decision open (Ω rule).** Experiment flow: this plan is
+Status: **tier 1 complete (2026-11-15); results and writeup below; Ω rule: owner accepted option (a).** Experiment flow: this plan is
 committed before any measurement; the log is appended as runs happen; results and writeup cite
 the log. No engine change: the engine is used as merged (main at b95f3d1).
 
@@ -474,3 +474,6 @@ Options:
 - (a) accept as is;
 - (b) rerun 300 K PA-CMD at Ω = 32 000 cm⁻¹ (8 runs, ≈ 7 h);
 - (c) (b) plus 100 K at Δt = 1/60 fs (≈ 20 h more).
+
+**Owner decision (2026-11-15):** option (a). The results stand as reported, with Ω sensitivity
+counted in the PA-CMD threshold and PA-CMD widths reported as Ω-dependent; no rerun.
