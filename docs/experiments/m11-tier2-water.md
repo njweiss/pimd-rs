@@ -1,6 +1,7 @@
 # M11 study, tier 2: dynamics failure modes in gas-phase H₂O (MACE-OFF23 small)
 
-Status: **plan approved (owner, 2026-11-16); pilot in progress.** Experiment flow: this plan is
+Status: **plan approved (owner, 2026-11-16); pilot complete; production on hold for an owner
+decision (statics rule triggered, budget over the cap; see the pilot steps 3–4 log entry).** Experiment flow: this plan is
 committed before any measurement; the log is appended as runs happen; results and writeup cite
 the log. No engine change: the engine is used as merged (main at 9161d43).
 
@@ -257,3 +258,98 @@ The pilot's numbers go into the log. The production matrix is adjusted only by t
 - Route for the rest of the pilot: batched cueq f32, N = 64. This is subject to the plan's condition
   that f32/cueq keeps NVE RPMD drift and band positions within σ of f64. It is checked first in step
   3, against e3nn f64 at sizes f64 can afford (classical P = 1, N = 64; RPMD P = 64, N = 4).
+
+### 2026-11-16 Pilot steps 3–4: precision, statics, PA-CMD stability, short dynamics
+
+Queue `pilot_t2.sh`, batched client, N = 64 unless stated, one GPU job at a time, 10.1 h of wall
+time (01:25–11:19). Configs in `studies/m11-dynamics-failure/configs/tier2/pilot_*.toml`; numbers
+from `statics_t2.py` (results/tier2/pilot_statics.txt) and `analyse_t2.py`
+(results/tier2/pilot_spectra.json). One replica per group unless stated, so peaks are noisy; the
+band centres are the metric used below.
+
+**3a/3b. Precision (cueq f32 against e3nn f64, same seeds).** Passes.
+
+| Check | cueq f32 | e3nn f64 |
+|---|---|---|
+| Classical 300 K, 5 segments: bend / stretch centre (cm⁻¹) | 1615.7 / 3859.1 | 1615.5 / 3859.2 |
+| Classical: largest \|Δh\| per 2 ps NVE segment (Eh per atom) | 2.8e-7 | 4.0e-7 |
+| RPMD P = 64, N = 4, one 2 ps NVE segment: Δh (Eh, of −1619.43) | +1.720e-3 | +1.709e-3 |
+
+The drift is the integrator's, not the precision's. Production route: batched cueq f32.
+
+**3c. Statics against H4** (virial and primitive energy above E_min per molecule; σ from 10 blocks):
+
+| T | P | E_vir dev. | E_prim dev. |
+|---|---|---|---|
+| 300 K | 16 | −10.14 % ± 0.13 | −10.35 % ± 0.19 |
+| 300 K | 32 | −3.01 % ± 0.07 | −3.47 % ± 0.10 |
+| 300 K | 64 | −0.52 % ± 0.17 | −1.03 % ± 0.33 |
+| 300 K | 128 | +0.10 % ± 0.14 | −1.78 % ± 0.25 |
+| 150 K | 32 | −10.91 % ± 0.09 | −10.65 % ± 0.13 |
+| 150 K | 64 | −3.08 % ± 0.10 | −3.23 % ± 0.13 |
+| 150 K | 128 | −0.82 % ± 0.09 | −1.60 % ± 0.24 |
+| 150 K | 256 | −0.22 % ± 0.11 | −2.03 % ± 0.29 |
+
+- The virial estimator converges with P as expected. By the plan's rule (virial within 1 %),
+  production P is 64 at 300 K and 128 at 150 K (as the plan expected).
+- **Primitive − virial grows with P and does not average away.** In Eh per molecule, with σ from
+  the integrated autocorrelation time:
+  - −0.5e-4 (P = 16) and −1.2e-4 (P = 64) at 300 K;
+  - −4.5e-4 ± 0.6e-4 at 300 K, P = 128 (7σ);
+  - −4.1e-4 ± 0.5e-4 at 150 K, P = 256 (8σ).
+
+  Both halves of each run agree. The two estimators have the same expectation in the finite-P
+  ensemble, so the sampling is biased in a way the virial estimator hides.
+  - A candidate, not tested: the configurational Δt error of a splitting with the exact free
+    ring-polymer step, which grows with P (Korol, Bou-Rabee and Miller 2019, the reason for the
+    Cayley-modified step).
+  - Other candidates: f32 forces, or the thermostat.
+  - Test: one static run at Δt = 0.125 fs, T = 300 K, P = 128 (≈ 40 min). If the gap is a Δt
+    error, it should shrink about 4×.
+- **This triggers the plan's statics rule** (a static quantity outside 5σ of H4 stops the series
+  for a log entry and an owner decision). At the production P values the primitive estimator is
+  off by 1.0 % (300 K, P = 64; 3σ on 10 blocks) and 1.6 % (150 K, P = 128; 7σ).
+
+**3d. PA-CMD at 150 K (P = 128, Δt = 0.05 fs, Ω = 16 000 cm⁻¹, one 1 ps segment).**
+- Stable, with every energy finite.
+- ⟨V⟩ − E_min per molecule is 0.010687 ± 0.000008 Eh, against plain PIMD at the same P
+  (T150_P128) 0.010656 ± 0.000012: 0.3 %, about 2σ.
+- Tier 1's silent failure (⟨V⟩ 24× exact) is absent at this Δt.
+
+**3e. Δt check (RPMD, 300 K, P = 64, 3 segments, same 0.5 fs lag grid).**
+- Bend centre: 1546.2 at 0.25 fs against 1543.1 cm⁻¹ at 0.125 fs (Δ 3.1).
+- Stretch centre: 3768.9 against 3768.0 cm⁻¹ (Δ 0.9).
+- The plan asks for "within σ". σ of an RPMD centre is not known from one replica each. Two
+  classical replicas (prec/classical_cueq and dyn/classical; 5 and 3 segments) give σ of 0.3 (bend)
+  and < 0.1 (stretch) cm⁻¹. On that scale the bend difference is about 10σ, though still a tenth
+  of the 30 cm⁻¹ allowance. The Q4 Δt/2 run would carry it into the finding threshold.
+
+**4. Short runs, 300 K, P = 64, 3 segments, one replica** (centres in cm⁻¹; reference ν2 1560.6,
+stretch 3728.2):
+
+| Method | Bend | Stretch | Spurious | ms per step |
+|---|---|---|---|---|
+| Classical (P = 1) | 1616.4 | 3859.1 | 0.032 | 36.7 |
+| RPMD | 1546.2 | 3768.9 | 0.056 | 98.2 |
+| TRPMD | 1550.3 | 3739.0 | 0.065 | 98.2 |
+| PA-CMD (Δt 0.1 fs) | 1544.7 | 3626.4 | 0.029 | 97.5 |
+
+These are pilot numbers for sizing only, not results. The minimum V − E_min per molecule is
+≥ +9.7e-4 Eh in every run, so no molecule entered a hole. Cost at P = 128: 193.5 ms per step
+(191 for PA-CMD).
+
+**Production cost** (from the measured ms per step; 2 replicas per main group; Q4 at 300 K one
+run each: RPMD P = 128, PA-CMD P = 128, RPMD Δt/2, and PA-CMD Ω = 32 000 at Δt 0.05 fs):
+
+| Segments per run | Main matrix | of which PA-CMD 150 K | Q4 | Total |
+|---|---|---|---|---|
+| 10 (plan) | 87.5 h | 45.0 h | 32.0 h | 119.5 h |
+| 5 | 44.1 h | 22.7 h | 16.2 h | 60.3 h |
+| 4 | 35.5 h | 18.3 h | 13.0 h | 48.5 h |
+
+About 61 h of the 72 h cap is left after the pilot. The plan's matrix is **over the cap** ("report
+and ask"). With 64 molecules per run, σ of a centre is already well under 1 cm⁻¹ at 3–5 segments,
+so fewer segments cost little precision against the 30 cm⁻¹ allowance.
+
+Production does not start until the owner decides on: the primitive-estimator gap (3c), the Δt
+check (3e), and the segment count (budget).
