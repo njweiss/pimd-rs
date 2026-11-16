@@ -1,6 +1,6 @@
 # M11 study, tier 2: dynamics failure modes in gas-phase H₂O (MACE-OFF23 small)
 
-Status: **plan (draft, 2026-11-15); awaiting owner approval.** Experiment flow: this plan is
+Status: **plan approved (owner, 2026-11-16); pilot in progress.** Experiment flow: this plan is
 committed before any measurement; the log is appended as runs happen; results and writeup cite
 the log. No engine change: the engine is used as merged (main at 9161d43).
 
@@ -181,4 +181,79 @@ The pilot's numbers go into the log. The production matrix is adjusted only by t
 
 ## Log
 
-(empty: no measurement yet)
+### 2026-11-16 Pilot step 1: client and reference (GPU, one job at a time)
+
+- `water_client.py --check` (CPU and CUDA, f64): one molecule identical to the M10a client (energy
+  −76.47275116977178 Eh both); forces against central differences (h = 1e-4 bohr) 5.0e-8
+  relative; four molecules with two overlapping (1.5 bohr apart) against the sum of single
+  molecules |ΔE| = 1.7e-13 Eh, |ΔF| = 3.5e-17 Eh/bohr (no cross terms).
+- `water_ref.py --check` (CUDA f64, `results/tier2/reference.json`):
+  - Minimum: E = −76.4797923081 Eh, OH 1.81181 bohr, HOH 104.953°.
+  - Harmonic frequencies, Cartesian 1632.66 / 3844.42 / 3948.60 cm⁻¹; Wilson GF in Radau
+    coordinates 1632.65 / 3844.45 / 3948.64 (check (a): the Radau construction and masses).
+  - Check (b), the kinetic operator: the DVR on the Radau-quadratic surface scaled by λ = 16, 64,
+    256, on grids shrunk by λ^(−1/4), deviates from GF by δ = 1.86 / 0.94 / 0.47 cm⁻¹ (bend) and
+    falls as 1/√λ. The extrapolated δ∞ is 0.000 for all three modes.
+  - Grid: 32 × 32 × 40 against 40 × 40 × 48 moves levels ≤ 0.030 cm⁻¹; a wider r range
+    (−0.75 / +1.4 bohr) ≤ 0.047 cm⁻¹.
+  - Plan deviation in the check: the plan's "harmonic limit to 0.1 cm⁻¹ at fixed λ" was replaced
+    by the λ → ∞ extrapolation. At finite λ the curvilinear kinetic energy leaves O(1/√λ)
+    anharmonic terms, so a fixed-λ comparison is not a test. The first attempts at fixed λ = 400
+    and with a 3σ-truncated r range failed for those reasons, not because of the operator.
+  - **The surface has holes.** At H–H < 1 bohr (Radau θ ≲ 40°) MACE returns energies down to
+    −368 Eh below the minimum. The physical surface there is > 24 000 cm⁻¹ above the minimum
+    (V at the neighbouring θ = 46°). The reference sets V = 0.5 Eh (≈ 110 000 cm⁻¹) where
+    H–H < 1.2 bohr and caps V at 0.5 Eh elsewhere. The lowest 12 states carry ≤ 1.4e-8 of their
+    weight on capped points (a shift ≤ 0.002 cm⁻¹). PIMD never comes near these geometries at
+    150–300 K, but the dynamics runs are watched for H–H < 1.2 bohr in case.
+  - **Band origins (cm⁻¹; experiment in brackets):**
+
+    | Level | MACE-OFF23 small | Experiment |
+    |---|---|---|
+    | ν2 | 1560.63 | 1594.7 |
+    | 2ν2 | 3074.34 | 3151.6 |
+    | ν1 | 3679.82 | 3657.1 |
+    | ν3 | 3778.35 | 3755.9 |
+
+    ZPE = 4628.82 cm⁻¹ (0.02109044 Eh). The Y-4 weights of bend / ν1 / ν3 in the atomic C_vv are
+    0.329 / 0.341 / 0.329, so the stretch reference centre is 3728.2 cm⁻¹.
+  - H4 values: E_min + ZPE + 3k_BT = −76.4558517 Eh per molecule at 300 K and −76.4572768 at
+    150 K (−25.4852839 and −25.4857589 Eh per atom, the engine's normalisation). Vibrational
+    excitation adds 4e-6 Eh per molecule at 300 K, which the statics script includes.
+
+### 2026-11-16 Pilot step 2: cost per step, and a batched client
+
+- Through the socket, one request per bead per step. CUDA, e3nn, per request:
+
+  | Molecules | f64 | f32 |
+  |---|---|---|
+  | 1 | 41 ms | 34 ms |
+  | 16 | 32 ms | 37 ms |
+  | 64 | 86 ms | 41 ms |
+  | 256 | 307 ms | 36 ms |
+
+  The f32 numbers are a per-call floor. CPU f64, one thread: 11.5 / 107 / 474 / 2112 ms. At P = 64
+  this would make a run ≈ 14 h even with K = 4: over the cap.
+- **Batched client (`water_mux.py`, study-only, no engine change).** The engine's socket potential
+  runs one thread per client, each STATUS → POSDATA + GETFORCE (crates/pimd-socket/src/lib.rs). With
+  `n_clients = P`, one process holds P connections, collects every bead's positions, and evaluates
+  all P × N molecules in one MACE call. Each connection gets its bead's energy (per-node
+  interaction energies plus Σ E0 in f64) and forces.
+  - Check against `water_client.py` bead by bead: f64 |ΔE| 1.7e-13 Eh, |ΔF| 4e-17 Eh/bohr; f32
+    6e-8 Eh, 2e-8 Eh/bohr; cueq f32 (`.venv-cueq`, inside `pixi run -e ml` for Triton's ptxas)
+    against e3nn f32 1.2e-7 Eh, 2.8e-8 Eh/bohr.
+- Engine ms per step (50-step difference of static runs; batched; CUDA):
+
+  | Route | N = 8 | N = 16 | N = 24 | N = 32 | N = 64 |
+  |---|---|---|---|---|---|
+  | e3nn f32, P = 64 | 58.7 | 110.7 | 167.6 | 221.1 | 2 822 (spills past 8 GB) |
+  | e3nn f32, P = 128 | 122.7 | 232.2 | | | |
+  | e3nn f64, P = 64 | | 1 224 | | | out of memory |
+  | cueq f32, P = 64 | | 30.9 | | 53.5 | 97.9 |
+  | cueq f32, P = 128 | | | | 102.8 | |
+
+  e3nn f32 costs ≈ 0.11 ms per molecule-bead, cueq f32 ≈ 0.024 ms, and e3nn f64 ≈ 1.2 ms (FP64 on
+  this consumer GPU). **f64 does not fit:** a P = 64, N = 16 run is ≈ 29 h.
+- Route for the rest of the pilot: batched cueq f32, N = 64. This is subject to the plan's condition
+  that f32/cueq keeps NVE RPMD drift and band positions within σ of f64. It is checked first in step
+  3, against e3nn f64 at sizes f64 can afford (classical P = 1, N = 64; RPMD P = 64, N = 4).
